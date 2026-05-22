@@ -1,0 +1,60 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Shifts</h2>
+        <p class="text-muted mb-0">Manage guard shift schedules</p>
+    </div>
+    <div class="page-actions d-flex gap-2">
+        <a href="{% url 'shift_import' %}" class="btn btn-success">
+            <i class="fa fa-file-excel"></i> Import Roster
+        </a>
+        <a href="{% url 'shift_add' %}" class="btn btn-primary">
+            <i class="fa fa-plus"></i> Add Shift
+        </a>
+    </div>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Shifts">
+            <thead>
+                <tr>
+                    <th>Shift</th>
+                    <th>Guard</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Type</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for shift in shifts %}
+                    <tr>
+                        <td>{{ shift.shift_name }}</td>
+                        <td>{{ shift.guard }}</td>
+                        <td>{{ shift.start_time }}</td>
+                        <td>{{ shift.end_time }}</td>
+                        <td><span class="badge bg-secondary">{{ shift.shift_code }}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <a href="{% url 'shift_edit' shift.shift_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-pen"></i>
+                                </a>
+                                <a href="{% url 'shift_delete' shift.shift_id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="fa fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No shifts found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

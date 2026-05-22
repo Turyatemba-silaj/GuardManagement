@@ -1,0 +1,24 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="mb-4">
+    <h2>{{ title }}</h2>
+    <p class="text-muted mb-0">Confirm this record should be removed</p>
+</div>
+
+<div class="form-card">
+    <div class="alert alert-danger">
+        Are you sure you want to delete <strong>{{ object }}</strong>?
+    </div>
+
+    <form method="POST">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">
+            <i class="fa fa-trash"></i> Delete
+        </button>
+        <a href="javascript:history.back()" class="btn btn-secondary">
+            <i class="fa fa-arrow-left"></i> Cancel
+        </a>
+    </form>
+</div>
+{% endblock %}

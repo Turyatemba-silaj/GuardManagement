@@ -1,0 +1,376 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>Dashboard</h2>
+        <p>Monitor guards, deployments, attendance, assets, incidents, and finance activity.</p>
+    </div>
+    <div class="page-actions d-flex gap-2">
+        <a href="{% url 'guard_add' %}" class="btn btn-primary">
+            <i class="fa fa-plus"></i> Add Guard
+        </a>
+        <a href="{% url 'deployment_add' %}" class="btn btn-outline-primary">
+            <i class="fa fa-location-dot"></i> New Deployment
+        </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card dashboard-card card-green">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div>
+                    <h6>Total Guards</h6>
+                    <h2>{{ total_guards }}</h2>
+                    <span class="stat-chip"><i class="fa fa-check-circle"></i> Active roster</span>
+                </div>
+                <i class="fa fa-user-shield fa-3x"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+        <div class="card dashboard-card card-blue">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div>
+                    <h6>Deployments</h6>
+                    <h2>{{ total_deployments }}</h2>
+                    <span class="stat-chip"><i class="fa fa-location-dot"></i> Site coverage</span>
+                </div>
+                <i class="fa fa-map-location-dot fa-3x"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+        <div class="card dashboard-card card-orange">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div>
+                    <h6>Attendance</h6>
+                    <h2>{{ total_attendance }}</h2>
+                    <span class="stat-chip"><i class="fa fa-calendar-check"></i> Daily records</span>
+                </div>
+                <i class="fa fa-clipboard-check fa-3x"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+        <div class="card dashboard-card card-red">
+            <div class="card-body d-flex justify-content-between align-items-start">
+                <div>
+                    <h6>Incidents</h6>
+                    <h2>{{ total_incidents }}</h2>
+                    <span class="stat-chip"><i class="fa fa-eye"></i> Needs review</span>
+                </div>
+                <i class="fa fa-triangle-exclamation fa-3x"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="panel p-3 h-100">
+            <div class="mini-metric">
+                <span>Supervisors</span>
+                <strong>{{ total_supervisors }}</strong>
+            </div>
+            <div class="mini-metric">
+                <span>Clients</span>
+                <strong>{{ total_clients }}</strong>
+            </div>
+            <div class="mini-metric">
+                <span>Assets</span>
+                <strong>{{ total_assets }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-xl-3">
+        <div class="panel p-3 h-100">
+            <div class="mini-metric">
+                <span>Shifts</span>
+                <strong>{{ total_shifts }}</strong>
+            </div>
+            <div class="mini-metric">
+                <span>Salaries</span>
+                <strong>{{ total_salaries }}</strong>
+            </div>
+            <div class="mini-metric">
+                <span>Advance Requests</span>
+                <strong>{{ total_advance_requests }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-6">
+        <div class="panel h-100">
+            <div class="panel-header">
+                <h5><i class="fa fa-compass text-success"></i> Operations Snapshot</h5>
+                <span class="badge bg-success">Live</span>
+            </div>
+            <div class="panel-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <a href="{% url 'attendance_list' %}" class="btn btn-outline-primary w-100">
+                            <i class="fa fa-calendar-check"></i> Attendance
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="{% url 'incident_list' %}" class="btn btn-outline-danger w-100">
+                            <i class="fa fa-triangle-exclamation"></i> Incidents
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="{% url 'asset_list' %}" class="btn btn-outline-secondary w-100">
+                            <i class="fa fa-box"></i> Assets
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-xl-8">
+        <div class="panel">
+            <div class="panel-header">
+                <h5><i class="fa fa-chart-column text-success"></i> System Records</h5>
+                <span class="text-muted small">All modules</span>
+            </div>
+            <div class="panel-body chart-box">
+                <canvas id="barChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="panel">
+            <div class="panel-header">
+                <h5><i class="fa fa-chart-pie text-warning"></i> Main Modules</h5>
+                <span class="text-muted small">Distribution</span>
+            </div>
+            <div class="panel-body chart-box">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+{{ chart_labels|json_script:"chart-labels" }}
+{{ chart_values|json_script:"chart-values" }}
+{{ month_labels|json_script:"month-labels" }}
+{{ monthly_incidents|json_script:"monthly-incidents" }}
+{{ monthly_attendance|json_script:"monthly-attendance" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const chartLabels = JSON.parse(document.getElementById("chart-labels").textContent);
+    const chartValues = JSON.parse(document.getElementById("chart-values").textContent);
+    const monthLabels = JSON.parse(document.getElementById("month-labels").textContent);
+    const monthlyIncidents = JSON.parse(document.getElementById("monthly-incidents").textContent);
+    const monthlyAttendance = JSON.parse(document.getElementById("monthly-attendance").textContent);
+
+    const gridColor = "rgba(83, 98, 115, 0.16)";
+    const tickColor = "#536273";
+
+    Chart.defaults.color = tickColor;
+    Chart.defaults.font.family = "Arial, Helvetica, sans-serif";
+
+    const dataLabelPlugin = {
+        id: "dataLabelPlugin",
+        afterDatasetsDraw(chart) {
+            const { ctx } = chart;
+
+            ctx.save();
+            ctx.font = "700 12px Arial, Helvetica, sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                const meta = chart.getDatasetMeta(datasetIndex);
+
+                meta.data.forEach((element, index) => {
+                    const value = dataset.data[index];
+
+                    if (value === null || value === undefined || Number(value) === 0) {
+                        return;
+                    }
+
+                    const position = element.tooltipPosition();
+                    let x = position.x;
+                    let y = position.y;
+                    let fillStyle = "#1e2a36";
+
+                    if (chart.config.type === "bar") {
+                        if (chart.options.indexAxis === "y") {
+                            x = position.x + 18;
+                            ctx.textAlign = "left";
+                        } else {
+                            y = position.y - 10;
+                            ctx.textAlign = "center";
+                        }
+                    }
+
+                    if (chart.config.type === "doughnut") {
+                        fillStyle = "#fff";
+                    }
+
+                    if (chart.config.type === "line") {
+                        y = position.y - 12;
+                        ctx.textAlign = "center";
+                    }
+
+                    ctx.fillStyle = fillStyle;
+                    ctx.fillText(value, x, y);
+                });
+            });
+
+            ctx.restore();
+        }
+    };
+
+    Chart.register(dataLabelPlugin);
+
+    new Chart(document.getElementById("barChart"), {
+        type: "bar",
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: "Total Records",
+                data: chartValues,
+                backgroundColor: "#1abb9c",
+                borderRadius: 8,
+                maxBarThickness: 42
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            layout: { padding: { top: 18 } },
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { precision: 0 }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("pieChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Guards", "Clients", "Deployments", "Incidents"],
+            datasets: [{
+                data: [
+                    {{ total_guards }},
+                    {{ total_clients }},
+                    {{ total_deployments }},
+                    {{ total_incidents }}
+                ],
+                backgroundColor: ["#1abb9c", "#f39c12", "#6c5ce7", "#e74c3c"],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            cutout: "64%",
+            layout: { padding: 8 },
+            plugins: {
+                legend: { position: "bottom" }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("lineChart"), {
+        type: "line",
+        data: {
+            labels: monthLabels,
+            datasets: [
+                {
+                    label: "Incidents",
+                    data: monthlyIncidents,
+                    borderColor: "#e74c3c",
+                    backgroundColor: "rgba(231, 76, 60, 0.12)",
+                    pointBackgroundColor: "#e74c3c",
+                    tension: 0.35,
+                    fill: true
+                },
+                {
+                    label: "Attendance",
+                    data: monthlyAttendance,
+                    borderColor: "#1abb9c",
+                    backgroundColor: "rgba(26, 187, 156, 0.12)",
+                    pointBackgroundColor: "#1abb9c",
+                    tension: 0.35,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            layout: { padding: { top: 18 } },
+            plugins: {
+                legend: { position: "bottom" }
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { precision: 0 }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("horizontalBarChart"), {
+        type: "bar",
+        data: {
+            labels: ["Guards", "Clients", "Assets", "Incidents"],
+            datasets: [{
+                label: "Records",
+                data: [
+                    {{ total_guards }},
+                    {{ total_clients }},
+                    {{ total_assets }},
+                    {{ total_incidents }}
+                ],
+                backgroundColor: ["#1abb9c", "#f39c12", "#34495e", "#e74c3c"],
+                borderRadius: 8,
+                maxBarThickness: 34
+            }]
+        },
+        options: {
+            indexAxis: "y",
+            maintainAspectRatio: false,
+            responsive: true,
+            layout: { padding: { right: 28 } },
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { precision: 0 }
+                },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+</script>
+{% endblock %}

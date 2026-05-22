@@ -1,0 +1,82 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>{{ title }}</h2>
+        <p>Complete the fields below and save the record.</p>
+    </div>
+    <a href="javascript:history.back()" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="form-card">
+    <form method="POST" novalidate>
+        {% csrf_token %}
+
+        <div class="row">
+            {% for field in form %}
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+
+                    {% if field.help_text %}
+                        <div class="form-text">{{ field.help_text }}</div>
+                    {% endif %}
+
+                    {% if field.errors %}
+                        <div class="text-danger small mt-1">
+                            {{ field.errors }}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <div class="page-actions d-flex justify-content-end gap-2 mt-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="fa fa-save"></i> {{ button_text|default:"Save" }}
+            </button>
+            <a href="javascript:history.back()" class="btn btn-secondary">
+                <i class="fa fa-xmark"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const employeeType = document.getElementById("id_employee_type");
+        const guard = document.getElementById("id_guard");
+        const supervisor = document.getElementById("id_supervisor");
+
+        if (!employeeType || !guard || !supervisor) {
+            return;
+        }
+
+        const guardGroup = guard.closest(".col-md-6");
+        const supervisorGroup = supervisor.closest(".col-md-6");
+
+        function syncSalaryFields() {
+            const isSupervisor = employeeType.value === "Supervisor";
+            guardGroup.style.display = isSupervisor ? "none" : "";
+            supervisorGroup.style.display = isSupervisor ? "" : "none";
+
+            if (isSupervisor) {
+                guard.value = "";
+            } else {
+                supervisor.value = "";
+            }
+        }
+
+        employeeType.addEventListener("change", syncSalaryFields);
+        syncSalaryFields();
+    });
+</script>
+{% endblock %}

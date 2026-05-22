@@ -1,0 +1,63 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Incidents</h2>
+        <p class="text-muted mb-0">Manage incident reports</p>
+    </div>
+    <a href="{% url 'incident_add' %}" class="btn btn-primary">
+        <i class="fa fa-plus"></i> Report Incident
+    </a>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Incidents">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Location</th>
+                    <th>Nature</th>
+                    <th>Details</th>
+                    <th>Full Name</th>
+                    <th>Issued By</th>
+                    <th>Further Comments</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for incident in incidents %}
+                    <tr>
+                        <td>{{ incident.incident_date }}</td>
+                        <td>{{ incident.incident_time|time:"h:i A"|default:"-" }}</td>
+                        <td>{{ incident.location }}</td>
+                        <td>{{ incident.incident_type }}</td>
+                        <td>{{ incident.description|truncatechars:70 }}</td>
+                        <td>{{ incident.involved_full_name }}</td>
+                        <td>{{ incident.reporter_name }}</td>
+                        <td>{{ incident.further_comments|truncatechars:50|default:"-" }}</td>
+                        <td><span class="badge bg-danger">{{ incident.status }}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <a href="{% url 'incident_edit' incident.incident_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-pen"></i>
+                                </a>
+                                <a href="{% url 'incident_delete' incident.incident_id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="fa fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">No incidents found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

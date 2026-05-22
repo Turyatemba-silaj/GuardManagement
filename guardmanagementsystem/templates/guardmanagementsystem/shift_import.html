@@ -1,0 +1,40 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>Import Duty Roster</h2>
+        <p>Upload a CSV or XLSX roster to create shift schedules and display them in Roster Attendance.</p>
+    </div>
+    <a href="{% url 'shift_list' %}" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left"></i> Back to Shifts
+    </a>
+</div>
+
+<div class="form-card">
+    <form method="POST" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="mb-3">
+            <label class="form-label fw-semibold" for="roster_file">Roster File</label>
+            <input id="roster_file" type="file" name="roster_file" class="form-control" accept=".csv,.xlsx" required>
+        </div>
+
+        <div class="alert alert-info">
+            Supported formats: simple rows with <strong>employee_number</strong>, <strong>shift_date</strong>, <strong>shift_type</strong>,
+            or the schedule layout with <strong>Pers No</strong>, <strong>Name</strong>, and date columns like <strong>Mo/26</strong>.
+            Use <strong>D</strong> or <strong>O</strong> for day shift and <strong>N</strong> for night shift.
+            Optional attendance columns: <strong>status</strong>, <strong>present</strong>, <strong>absence_reason</strong>.
+        </div>
+
+        <div class="page-actions d-flex justify-content-end gap-2">
+            <button type="submit" class="btn btn-success">
+                <i class="fa fa-upload"></i> Import Roster
+            </button>
+            <a href="{% url 'shift_list' %}" class="btn btn-secondary">
+                <i class="fa fa-xmark"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

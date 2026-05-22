@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Guard Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #eef3f8;
+            --panel: #ffffff;
+            --ink: #1e2a36;
+            --muted: #6c7a89;
+            --line: #dfe7ef;
+            --sidebar: #182332;
+            --sidebar-soft: #223247;
+            --brand: #1abb9c;
+            --brand-dark: #12987e;
+            --accent: #f39c12;
+            --danger: #e74c3c;
+            --blue: #247ba0;
+            --purple: #6c5ce7;
+        }
+
+        * {
+            letter-spacing: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 0;
+            width: 272px;
+            height: 100vh;
+            flex: 0 0 272px;
+            background: var(--sidebar);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .brand-block {
+            padding: 24px 22px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--brand);
+            color: #fff;
+            margin-right: 10px;
+        }
+
+        .brand-title {
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.15;
+        }
+
+        .brand-subtitle {
+            color: #aab6c3;
+            font-size: 0.78rem;
+        }
+
+        .sidebar-section {
+            padding: 18px 14px;
+        }
+
+        .sidebar-label {
+            color: #7f90a4;
+            font-size: 0.72rem;
+            font-weight: 700;
+            margin: 0 12px 8px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-group {
+            margin-bottom: 10px;
+        }
+
+        .sidebar-group-toggle {
+            width: 100%;
+            min-height: 42px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: #d8e2ec;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            font-weight: 700;
+            text-align: left;
+            text-transform: uppercase;
+            font-size: 0.76rem;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .sidebar-group-toggle:hover,
+        .sidebar-group-toggle[aria-expanded="true"] {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+        }
+
+        .sidebar-group-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-group-toggle .fa-chevron-down {
+            font-size: 0.72rem;
+            transition: transform 0.15s ease;
+        }
+
+        .sidebar-group-toggle[aria-expanded="true"] .fa-chevron-down {
+            transform: rotate(180deg);
+        }
+
+        .sidebar-submenu {
+            padding: 6px 0 4px 12px;
+        }
+
+        .sidebar-link {
+            min-height: 42px;
+            border-radius: 8px;
+            color: #d8e2ec;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            text-decoration: none;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .sidebar-link i {
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar-link:hover,
+        .sidebar-link.active {
+            background: var(--sidebar-soft);
+            color: #fff;
+        }
+
+        .sidebar-link.active {
+            box-shadow: inset 3px 0 0 var(--brand);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 16px 18px 22px;
+            color: #aab6c3;
+            font-size: 0.82rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .content-area {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .topbar {
+            min-height: 72px;
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 0 28px;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        .topbar h1 {
+            font-size: 1.15rem;
+            font-weight: 800;
+            margin: 0;
+        }
+
+        .topbar .search-box {
+            max-width: 360px;
+            width: 100%;
+            position: relative;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+        }
+
+        .search-box input {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 14px 10px 38px;
+        }
+
+        .page-shell {
+            padding: 28px;
+        }
+
+        .page-heading {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .page-actions,
+        .d-flex.justify-content-between > .btn,
+        .d-flex.justify-content-between > .d-flex {
+            flex: 0 0 auto;
+        }
+
+        .page-heading h2 {
+            margin: 0;
+            font-size: 1.55rem;
+            font-weight: 800;
+        }
+
+        .page-heading p {
+            color: var(--muted);
+            margin: 6px 0 0;
+        }
+
+        .panel,
+        .table-card,
+        .form-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 12px 28px rgba(35, 49, 66, 0.08);
+        }
+
+        .table-card,
+        .form-card {
+            padding: 22px;
+        }
+
+        .form-card {
+            max-width: 880px;
+        }
+
+        .dashboard-card {
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            border-radius: 8px;
+            color: #fff;
+            min-height: 132px;
+            box-shadow: 0 12px 24px rgba(35, 49, 66, 0.14);
+            overflow: hidden;
+        }
+
+        .dashboard-card .card-body {
+            position: relative;
+            z-index: 1;
+            padding: 20px;
+        }
+
+        .dashboard-card h6 {
+            margin-bottom: 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .dashboard-card h2 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 800;
+        }
+
+        .dashboard-card i {
+            opacity: 0.78;
+        }
+
+        .card-blue {
+            background: linear-gradient(135deg, var(--blue), #1f5e7c);
+        }
+
+        .card-green {
+            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+        }
+
+        .card-orange {
+            background: linear-gradient(135deg, var(--accent), #c87907);
+        }
+
+        .card-red {
+            background: linear-gradient(135deg, var(--danger), #bd3327);
+        }
+
+        .card-purple {
+            background: linear-gradient(135deg, var(--purple), #4d3ec7);
+        }
+
+        .card-dark {
+            background: linear-gradient(135deg, #34495e, #22313f);
+        }
+
+        .stat-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.18);
+            font-size: 0.78rem;
+            margin-top: 12px;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 18px 20px 0;
+        }
+
+        .panel-header h5,
+        .table-card h5 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 800;
+        }
+
+        .panel-body {
+            padding: 18px 20px 20px;
+        }
+
+        .export-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
+
+        .chart-box {
+            min-height: 280px;
+        }
+
+        .mini-metric {
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 13px 0;
+        }
+
+        .mini-metric:last-child {
+            border-bottom: 0;
+        }
+
+        .mini-metric span {
+            color: var(--muted);
+        }
+
+        .mini-metric strong {
+            font-size: 1.05rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            align-items: center;
+            white-space: nowrap;
+            min-width: max-content;
+        }
+
+        .action-buttons .btn {
+            width: 34px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .table {
+            --bs-table-bg: transparent;
+        }
+
+        .table td,
+        .table th {
+            vertical-align: middle;
+        }
+
+        .table th.text-end,
+        .table td:last-child {
+            white-space: nowrap;
+        }
+
+        .table thead th {
+            color: #536273;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+        }
+
+        .btn {
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 991.98px) {
+            .app-layout {
+                display: block;
+            }
+
+            .sidebar {
+                position: relative;
+                width: 100%;
+                height: auto;
+                flex: none;
+            }
+
+            .sidebar-section {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px;
+            }
+
+            .sidebar-label,
+            .sidebar-footer {
+                display: none;
+            }
+
+            .topbar {
+                position: relative;
+                padding: 16px;
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .topbar .search-box {
+                max-width: none;
+            }
+
+            .page-shell {
+                padding: 18px;
+            }
+
+            .page-heading {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .page-heading .d-flex,
+            .d-flex.justify-content-between {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <aside class="sidebar">
+            <div class="brand-block">
+                <div class="d-flex align-items-center">
+                    <span class="brand-mark"><i class="fa fa-shield-halved"></i></span>
+                    <div>
+                        <div class="brand-title">Guard Management</div>
+                        <div class="brand-subtitle">Operations Console</div>
+                    </div>
+                </div>
+            </div>
+
+            {% with current_url=request.resolver_match.url_name %}
+            <div class="sidebar-section">
+                <div class="sidebar-group">
+                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#mainMenu" aria-expanded="{% if current_url == 'dashboard' or 'guard' in current_url and 'advance' not in current_url or 'supervisor' in current_url or 'client' in current_url %}true{% else %}false{% endif %}" aria-controls="mainMenu">
+                        <span class="sidebar-group-title"><i class="fa fa-layer-group"></i><span>Main</span></span>
+                        <i class="fa fa-chevron-down"></i>
+                    </button>
+                    <div id="mainMenu" class="collapse {% if current_url == 'dashboard' or 'guard' in current_url and 'advance' not in current_url or 'supervisor' in current_url or 'client' in current_url %}show{% endif %}">
+                        <div class="sidebar-submenu">
+                            <a class="sidebar-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
+                                <i class="fa fa-chart-line"></i><span>Dashboard</span>
+                            </a>
+                            <a class="sidebar-link {% if 'guard' in current_url and 'advance' not in current_url %}active{% endif %}" href="{% url 'guard_list' %}">
+                                <i class="fa fa-user-shield"></i><span>Guards</span>
+                            </a>
+                            <a class="sidebar-link {% if 'supervisor' in current_url %}active{% endif %}" href="{% url 'supervisor_list' %}">
+                                <i class="fa fa-user-tie"></i><span>Supervisors</span>
+                            </a>
+                            <a class="sidebar-link {% if 'client' in current_url %}active{% endif %}" href="{% url 'client_list' %}">
+                                <i class="fa fa-building"></i><span>Clients</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-group">
+                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#operationsMenu" aria-expanded="{% if 'deployment' in current_url or current_url == 'program_guard' or 'attendance' in current_url or 'shift' in current_url or 'incident' in current_url or current_url == 'schedule_report' %}true{% else %}false{% endif %}" aria-controls="operationsMenu">
+                        <span class="sidebar-group-title"><i class="fa fa-briefcase"></i><span>Operations</span></span>
+                        <i class="fa fa-chevron-down"></i>
+                    </button>
+                    <div id="operationsMenu" class="collapse {% if 'deployment' in current_url or current_url == 'program_guard' or 'attendance' in current_url or 'shift' in current_url or 'incident' in current_url or current_url == 'schedule_report' %}show{% endif %}">
+                        <div class="sidebar-submenu">
+                            <a class="sidebar-link {% if current_url == 'program_guard' %}active{% endif %}" href="{% url 'program_guard' %}">
+                                <i class="fa fa-user-plus"></i><span>Program Guard</span>
+                            </a>
+                            <a class="sidebar-link {% if 'deployment' in current_url %}active{% endif %}" href="{% url 'deployment_list' %}">
+                                <i class="fa fa-location-dot"></i><span>Deployments</span>
+                            </a>
+                            <a class="sidebar-link {% if 'attendance' in current_url %}active{% endif %}" href="{% url 'attendance_list' %}">
+                                <i class="fa fa-calendar-check"></i><span>Attendance</span>
+                            </a>
+                            <a class="sidebar-link {% if 'shift' in current_url %}active{% endif %}" href="{% url 'shift_list' %}">
+                                <i class="fa fa-clock"></i><span>Shifts</span>
+                            </a>
+                            <a class="sidebar-link {% if 'incident' in current_url %}active{% endif %}" href="{% url 'incident_list' %}">
+                                <i class="fa fa-triangle-exclamation"></i><span>Incidents</span>
+                            </a>
+                            <a class="sidebar-link {% if current_url == 'schedule_report' %}active{% endif %}" href="{% url 'schedule_report' %}">
+                                <i class="fa fa-file-lines"></i><span>Schedule Reports</span>
+                            </a>
+                            <a class="sidebar-link {% if current_url == 'attendance_query_report' %}active{% endif %}" href="{% url 'attendance_query_report' %}">
+                                <i class="fa fa-magnifying-glass-chart"></i><span>Attendance Query</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-group">
+                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#administrationMenu" aria-expanded="{% if 'asset' in current_url or 'salary' in current_url or 'advance_request' in current_url or 'disciplinary_action' in current_url %}true{% else %}false{% endif %}" aria-controls="administrationMenu">
+                        <span class="sidebar-group-title"><i class="fa fa-gears"></i><span>Administration</span></span>
+                        <i class="fa fa-chevron-down"></i>
+                    </button>
+                    <div id="administrationMenu" class="collapse {% if 'asset' in current_url or 'salary' in current_url or 'advance_request' in current_url or 'disciplinary_action' in current_url %}show{% endif %}">
+                        <div class="sidebar-submenu">
+                            <a class="sidebar-link {% if 'asset' in current_url %}active{% endif %}" href="{% url 'asset_list' %}">
+                                <i class="fa fa-box"></i><span>Assets</span>
+                            </a>
+                            <a class="sidebar-link {% if 'salary' in current_url %}active{% endif %}" href="{% url 'salary_list' %}">
+                                <i class="fa fa-money-bill"></i><span>Salaries</span>
+                            </a>
+                            <a class="sidebar-link {% if 'advance_request' in current_url %}active{% endif %}" href="{% url 'advance_request_list' %}">
+                                <i class="fa fa-wallet"></i><span>Advances</span>
+                            </a>
+                            <a class="sidebar-link {% if 'disciplinary_action' in current_url %}active{% endif %}" href="{% url 'disciplinary_action_list' %}">
+                                <i class="fa fa-scale-balanced"></i><span>Disciplinary</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endwith %}
+
+            <div class="sidebar-footer">
+                <div class="fw-semibold text-white">Secure patrol oversight</div>
+                <div>Records, deployments, incidents, and finance in one workspace.</div>
+            </div>
+        </aside>
+
+        <div class="content-area">
+            <header class="topbar">
+                <div>
+                    <h1>Operations Dashboard</h1>
+                    <div class="text-muted small">Live overview of security workforce activity</div>
+                </div>
+                <div class="search-box">
+                    <i class="fa fa-search"></i>
+                    <input id="globalSearchInput" type="search" class="form-control" placeholder="Search records">
+                </div>
+            </header>
+
+            <main class="page-shell">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            function cleanText(value) {
+                return String(value || "").replace(/\s+/g, " ").trim();
+            }
+
+            function escapeCell(value) {
+                return cleanText(value)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            function exportTableToExcel(table) {
+                const headerCells = Array.from(table.querySelectorAll("thead th"));
+                const exportIndexes = headerCells
+                    .map((cell, index) => ({ cell, index }))
+                    .filter(({ cell }) => cleanText(cell.textContent).toLowerCase() !== "actions")
+                    .map(({ index }) => index);
+                const rows = [];
+
+                rows.push(exportIndexes.map(index => escapeCell(headerCells[index].textContent)));
+
+                table.querySelectorAll("tbody tr").forEach(row => {
+                    const cells = Array.from(row.children);
+
+                    if (cells.length <= 1 && cells[0] && cells[0].hasAttribute("colspan")) {
+                        return;
+                    }
+
+                    rows.push(exportIndexes.map(index => escapeCell(cells[index] ? cells[index].textContent : "")));
+                });
+
+                const worksheet = rows
+                    .map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`)
+                    .join("");
+                const workbook = `
+                    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+                          xmlns:x="urn:schemas-microsoft-com:office:excel"
+                          xmlns="http://www.w3.org/TR/REC-html40">
+                    <head><meta charset="utf-8"></head>
+                    <body><table>${worksheet}</table></body></html>
+                `;
+                const title = table.dataset.exportTitle || document.querySelector(".page-shell h2")?.textContent || "Export";
+                const filename = cleanText(title).replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Export";
+                const blob = new Blob([workbook], { type: "application/vnd.ms-excel" });
+                const link = document.createElement("a");
+
+                link.href = URL.createObjectURL(blob);
+                link.download = `${filename}.xls`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(link.href);
+            }
+
+            document.querySelectorAll("table.export-table").forEach(table => {
+                if (table.dataset.exportReady === "true") {
+                    return;
+                }
+
+                table.dataset.exportReady = "true";
+
+                const toolbar = document.createElement("div");
+                const button = document.createElement("button");
+
+                toolbar.className = "export-toolbar";
+                button.type = "button";
+                button.className = "btn btn-success btn-sm";
+                button.innerHTML = '<i class="fa fa-file-excel"></i> Export Excel';
+                button.addEventListener("click", function () {
+                    exportTableToExcel(table);
+                });
+
+                toolbar.appendChild(button);
+                table.closest(".table-responsive").before(toolbar);
+            });
+
+            const globalSearchInput = document.getElementById("globalSearchInput");
+            const searchableTables = Array.from(document.querySelectorAll("table.export-table"));
+
+            if (globalSearchInput && searchableTables.length) {
+                globalSearchInput.addEventListener("input", function () {
+                    const query = cleanText(globalSearchInput.value).toLowerCase();
+
+                    searchableTables.forEach(table => {
+                        table.querySelectorAll("tbody tr").forEach(row => {
+                            const isEmptyRow = row.children.length <= 1 && row.children[0] && row.children[0].hasAttribute("colspan");
+
+                            if (isEmptyRow) {
+                                row.style.display = query ? "none" : "";
+                                return;
+                            }
+
+                            row.style.display = cleanText(row.textContent).toLowerCase().includes(query) ? "" : "none";
+                        });
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html>

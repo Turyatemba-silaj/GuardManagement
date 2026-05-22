@@ -1,0 +1,55 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Disciplinary Actions</h2>
+        <p class="text-muted mb-0">Manage disciplinary records</p>
+    </div>
+    <a href="{% url 'disciplinary_action_add' %}" class="btn btn-primary">
+        <i class="fa fa-plus"></i> Add Action
+    </a>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Disciplinary Actions">
+            <thead>
+                <tr>
+                    <th>Guard</th>
+                    <th>Date</th>
+                    <th>Action</th>
+                    <th>Penalty</th>
+                    <th>Issued By</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for disciplinary_action in disciplinary_actions %}
+                    <tr>
+                        <td>{{ disciplinary_action.guard }}</td>
+                        <td>{{ disciplinary_action.action_date }}</td>
+                        <td>{{ disciplinary_action.action_type }}</td>
+                        <td>{{ disciplinary_action.penalty|default:"-" }}</td>
+                        <td>{{ disciplinary_action.issued_by|default:"-" }}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <a href="{% url 'disciplinary_action_edit' disciplinary_action.disciplinary_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-pen"></i>
+                                </a>
+                                <a href="{% url 'disciplinary_action_delete' disciplinary_action.disciplinary_id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="fa fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No disciplinary actions found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

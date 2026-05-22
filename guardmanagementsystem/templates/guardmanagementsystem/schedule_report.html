@@ -1,0 +1,197 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
+<style>
+    .report-shell {
+        background: #fff;
+        border-top: 3px solid #00a7d0;
+        border-radius: 4px;
+        box-shadow: 0 10px 24px rgba(35, 49, 66, 0.08);
+    }
+
+    .report-filter {
+        padding: 28px 10px 56px;
+    }
+
+    .report-table-wrap {
+        border-top: 1px solid #e5e9ef;
+        padding: 28px 10px 18px;
+    }
+
+    .report-title {
+        font-size: 1.5rem;
+        font-weight: 500;
+        margin-bottom: 26px;
+    }
+
+    .filter-label {
+        color: #222;
+        font-size: 0.9rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+    }
+
+    .period-group {
+        display: grid;
+        grid-template-columns: 1fr 38px 1fr;
+    }
+
+    .period-group .input-group-text {
+        justify-content: center;
+        border-radius: 0;
+    }
+
+    .report-submit-column {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 8px;
+    }
+
+    .report-submit-column .btn {
+        min-width: 150px;
+    }
+
+    #scheduleReportTable_wrapper .dt-buttons .btn {
+        background: #f7f7f7;
+        border-color: #d5d9de;
+        color: #26323f;
+    }
+
+    #scheduleReportTable_wrapper .dataTables_filter input,
+    #scheduleReportTable_wrapper .dataTables_length select {
+        border: 1px solid #cfd6dd;
+        border-radius: 2px;
+        min-height: 34px;
+    }
+
+    #scheduleReportTable thead th {
+        background: #fff;
+        color: #202a34;
+        font-size: 0.88rem;
+        text-transform: none;
+        white-space: nowrap;
+    }
+
+    .breadcrumb-mini {
+        color: #6c7a89;
+        font-size: 0.85rem;
+    }
+
+    .breadcrumb-mini a {
+        color: #26323f;
+        text-decoration: none;
+    }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">Schedule Reports</h2>
+    </div>
+    <div class="breadcrumb-mini">
+        <a href="{% url 'dashboard' %}"><i class="fa fa-dashboard"></i> Home</a>
+        <span class="mx-2">&gt;</span>
+        <span>reports</span>
+    </div>
+</div>
+
+<div class="report-shell">
+    <form method="GET" class="report-filter">
+        <div class="report-title">Schedule report</div>
+
+        <div class="row g-4 align-items-end">
+            <div class="col-md-3">
+                <label class="filter-label" for="deployment_area">Deployment Area:</label>
+                <select id="deployment_area" name="deployment_area" class="form-select">
+                    <option value="">All Areas</option>
+                    {% for client in clients %}
+                        <option value="{{ client.client_id }}" {% if selected_deployment_area == client.client_id|stringformat:"s" %}selected{% endif %}>
+                            {{ client.client_name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="filter-label" for="site">Site:</label>
+                <select id="site" name="site" class="form-select">
+                    <option value="">select site</option>
+                    {% for site in sites %}
+                        <option value="{{ site }}" {% if selected_site == site %}selected{% endif %}>{{ site }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="filter-label">Period</label>
+                <div class="period-group">
+                    <input type="date" name="start_date" value="{{ selected_start_date|default:'' }}" class="form-control">
+                    <span class="input-group-text">to</span>
+                    <input type="date" name="end_date" value="{{ selected_end_date|default:'' }}" class="form-control">
+                </div>
+            </div>
+
+            <div class="col-12 report-submit-column">
+                <button type="submit" class="btn btn-success">submit</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="report-table-wrap">
+        <div class="table-responsive">
+            <table id="scheduleReportTable" class="table table-striped table-hover align-middle w-100">
+                <thead>
+                    <tr>
+                        <th>date scheduled</th>
+                        <th>Site scheduled</th>
+                        <th>Day Shift</th>
+                        <th>Night Shift</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report_rows %}
+                        <tr>
+                            <td>{{ row.date_scheduled }}</td>
+                            <td>{{ row.site_scheduled }}</td>
+                            <td>{{ row.day_shift }}</td>
+                            <td>{{ row.night_shift }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.colVis.min.js"></script>
+
+<script>
+    $(function () {
+        $("#scheduleReportTable").DataTable({
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "All"]],
+            dom: '<"row mb-2"<"col-md-6"B><"col-md-6"f>><"row mb-2"<"col-md-6"l>>rt<"row mt-2"<"col-md-6"i><"col-md-6"p>>',
+            buttons: [
+                { extend: "excelHtml5", text: "Excel", title: "Schedule Reports" },
+                { extend: "pdfHtml5", text: "PDF", title: "Schedule Reports" },
+                { extend: "colvis", text: "Column visibility" }
+            ],
+            order: [[0, "desc"]],
+            language: {
+                emptyTable: "No data available in table"
+            }
+        });
+    });
+</script>
+{% endblock %}
