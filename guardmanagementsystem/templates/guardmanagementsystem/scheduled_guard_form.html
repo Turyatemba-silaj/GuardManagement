@@ -1,0 +1,256 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<style>
+    .schedule-card {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 8px 18px rgba(31, 45, 61, 0.08);
+        padding: 22px;
+    }
+
+    .schedule-grid-wrap {
+        border: 1px solid #d8e0e8;
+        border-radius: 8px;
+        overflow-x: auto;
+    }
+
+    .schedule-grid {
+        margin: 0;
+        min-width: 1520px;
+        table-layout: fixed;
+    }
+
+    .schedule-grid th {
+        background: #f6f8fb;
+        color: #33475b;
+        font-size: 0.82rem;
+        min-width: 72px;
+        padding: 10px 8px;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .schedule-grid td {
+        min-width: 72px;
+        padding: 8px;
+        text-align: center;
+    }
+
+    .schedule-code {
+        border: 1px solid #cfd6dd;
+        border-radius: 4px;
+        font-weight: 700;
+        height: 36px;
+        padding: 4px;
+        text-align: center;
+        text-transform: uppercase;
+        width: 58px;
+    }
+
+    .schedule-code:disabled {
+        background: #eef2f6;
+        color: #8a98a8;
+    }
+
+    .schedule-help {
+        background: #eef8f5;
+        border: 1px solid #caece4;
+        border-radius: 8px;
+        color: #1f5f51;
+        padding: 12px 14px;
+    }
+
+    .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    @media (max-width: 767.98px) {
+        .quick-actions {
+            justify-content: stretch;
+        }
+
+        .quick-actions .btn {
+            flex: 1 1 auto;
+        }
+    }
+</style>
+
+<div class="page-heading">
+    <div>
+        <h2>{{ title }}</h2>
+        <p>Create a deployment and its daily schedule so attendance can be captured by device or user input.</p>
+    </div>
+    <a href="{% url 'deployment_list' %}" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="schedule-card">
+    <form method="POST" novalidate>
+        {% csrf_token %}
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.guard.id_for_label }}">{{ form.guard.label }}</label>
+                {{ form.guard }}
+                {% if form.guard.errors %}<div class="text-danger small mt-1">{{ form.guard.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.reliever_guard.id_for_label }}">{{ form.reliever_guard.label }}</label>
+                {{ form.reliever_guard }}
+                {% if form.reliever_guard.help_text %}<div class="form-text">{{ form.reliever_guard.help_text }}</div>{% endif %}
+                {% if form.reliever_guard.errors %}<div class="text-danger small mt-1">{{ form.reliever_guard.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.additional_guards.id_for_label }}">{{ form.additional_guards.label }}</label>
+                {{ form.additional_guards }}
+                {% if form.additional_guards.help_text %}<div class="form-text">{{ form.additional_guards.help_text }}</div>{% endif %}
+                {% if form.additional_guards.errors %}<div class="text-danger small mt-1">{{ form.additional_guards.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.client.id_for_label }}">{{ form.client.label }}</label>
+                {{ form.client }}
+                {% if form.client.errors %}<div class="text-danger small mt-1">{{ form.client.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.required_guards.id_for_label }}">{{ form.required_guards.label }}</label>
+                {{ form.required_guards }}
+                {% if form.required_guards.help_text %}<div class="form-text">{{ form.required_guards.help_text }}</div>{% endif %}
+                {% if form.required_guards.errors %}<div class="text-danger small mt-1">{{ form.required_guards.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.site_location.id_for_label }}">{{ form.site_location.label }}</label>
+                {{ form.site_location }}
+                {% if form.site_location.errors %}<div class="text-danger small mt-1">{{ form.site_location.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.start_date.id_for_label }}">{{ form.start_date.label }}</label>
+                {{ form.start_date }}
+                {% if form.start_date.errors %}<div class="text-danger small mt-1">{{ form.start_date.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-3 mb-3">
+                <label class="form-label fw-semibold" for="{{ form.end_date.id_for_label }}">{{ form.end_date.label }}</label>
+                {{ form.end_date }}
+                {% if form.end_date.errors %}<div class="text-danger small mt-1">{{ form.end_date.errors }}</div>{% endif %}
+            </div>
+        </div>
+
+        <div class="schedule-help mb-3">
+            Use <strong>D</strong> for day shift, <strong>N</strong> for night shift, <strong>D/N</strong> for combined duty,
+            <strong>PH</strong> for public holiday, and <strong>O</strong> or <strong>R</strong> for off/rest days. Duty days create shifts and attendance rows.
+            Select enough regular guards to match <strong>Required Guards</strong>. Each regular guard works six duty days, and the reliever covers seventh-day rest duties.
+        </div>
+
+        <div class="row align-items-end mb-3">
+            <div class="col-md-3 mb-3 mb-md-0">
+                <label class="form-label fw-semibold" for="schedule_month">Schedule Month</label>
+                <select id="schedule_month" name="schedule_month" class="form-control" required>
+                    {% for number, name in month_choices %}
+                        <option value="{{ number }}" {% if current_month == number %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-3 mb-md-0">
+                <label class="form-label fw-semibold" for="schedule_year">Schedule Year</label>
+                <input id="schedule_year" type="number" name="schedule_year" class="form-control" value="{{ current_year }}" required>
+            </div>
+            <div class="col-md-6">
+                <div class="quick-actions">
+                    <button type="button" class="btn btn-outline-success btn-sm" data-fill-code="D">Fill D</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-fill-code="N">Fill N</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-fill-code="">Clear</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="schedule-grid-wrap mb-3">
+            <table class="table table-bordered schedule-grid">
+                <thead>
+                    <tr>
+                        {% for day in schedule_days %}
+                            <th>
+                                <div>{{ day.number }}</div>
+                                <small>{{ day.weekday|default:"-" }}</small>
+                            </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        {% for day in schedule_days %}
+                            <td>
+                                <input
+                                    class="schedule-code"
+                                    name="day_{{ day.number }}"
+                                    value="{{ day.value }}"
+                                    maxlength="3"
+                                    {% if not day.is_valid %}disabled{% endif %}
+                                    aria-label="Schedule code for day {{ day.number }}"
+                                >
+                            </td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="page-actions d-flex justify-content-end gap-2">
+            <button type="submit" class="btn btn-success">
+                <i class="fa fa-calendar-check"></i> Save Scheduled Guard
+            </button>
+            <a href="{% url 'deployment_list' %}" class="btn btn-secondary">
+                <i class="fa fa-xmark"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const monthSelect = document.getElementById("schedule_month");
+        const yearInput = document.getElementById("schedule_year");
+        const codeInputs = Array.from(document.querySelectorAll(".schedule-code"));
+
+        function daysInMonth(year, month) {
+            return new Date(year, month, 0).getDate();
+        }
+
+        function syncMonthDays() {
+            const month = parseInt(monthSelect.value, 10);
+            const year = parseInt(yearInput.value, 10);
+            const lastDay = daysInMonth(year, month);
+
+            codeInputs.forEach(function (input, index) {
+                const isValid = index + 1 <= lastDay;
+                input.disabled = !isValid;
+                if (!isValid) {
+                    input.value = "";
+                }
+            });
+        }
+
+        document.querySelectorAll("[data-fill-code]").forEach(function (button) {
+            button.addEventListener("click", function () {
+                const code = button.getAttribute("data-fill-code");
+                codeInputs.forEach(function (input) {
+                    if (!input.disabled) {
+                        input.value = code;
+                    }
+                });
+            });
+        });
+
+        monthSelect.addEventListener("change", syncMonthDays);
+        yearInput.addEventListener("input", syncMonthDays);
+        syncMonthDays();
+    });
+</script>
+{% endblock %}

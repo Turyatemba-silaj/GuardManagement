@@ -1,0 +1,274 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<style>
+    .payslip-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .payroll-report {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #1e2a36;
+        padding: 28px;
+    }
+
+    .report-header {
+        align-items: flex-start;
+        border-bottom: 3px solid var(--brand);
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 20px;
+        padding-bottom: 18px;
+    }
+
+    .company-name {
+        font-size: 1.45rem;
+        font-weight: 800;
+        margin: 0;
+        text-transform: uppercase;
+    }
+
+    .report-title {
+        background: #eef8f5;
+        border: 1px solid #caece4;
+        border-radius: 6px;
+        color: var(--brand-dark);
+        font-size: 1rem;
+        font-weight: 800;
+        padding: 10px 14px;
+        text-align: center;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 22px;
+    }
+
+    .summary-box {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 12px;
+    }
+
+    .summary-label {
+        color: var(--muted);
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 800;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+    }
+
+    .summary-value {
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .payroll-table {
+        font-size: 0.84rem;
+    }
+
+    .payroll-table thead th {
+        background: #f6f8fb;
+        color: #3b4a59;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .amount {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .totals-row th,
+    .totals-row td {
+        background: #eef8f5;
+        color: var(--brand-dark);
+        font-weight: 800;
+    }
+
+    .signature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 22px;
+        margin-top: 34px;
+    }
+
+    .signature-line {
+        border-top: 1px solid #9aa8b5;
+        color: var(--muted);
+        font-size: 0.78rem;
+        padding-top: 8px;
+        text-align: center;
+    }
+
+    @media (max-width: 767.98px) {
+        .payroll-report {
+            padding: 18px;
+        }
+
+        .report-header {
+            display: block;
+        }
+
+        .report-title {
+            margin-top: 14px;
+            white-space: normal;
+        }
+
+        .summary-grid,
+        .signature-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media print {
+        .sidebar,
+        .topbar,
+        .page-header,
+        .payslip-actions {
+            display: none !important;
+        }
+
+        .app-layout,
+        .main-panel,
+        .content-area {
+            display: block;
+            min-height: auto;
+            padding: 0;
+        }
+
+        body {
+            background: #fff;
+        }
+
+        .payroll-report {
+            border: 0;
+            padding: 0;
+        }
+
+        .table-responsive {
+            overflow: visible;
+        }
+    }
+</style>
+
+<div class="payslip-actions">
+    <a href="{% url 'salary_list' %}" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left me-1"></i> Back
+    </a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">
+        <i class="fa fa-print me-1"></i> Print General Payslip
+    </button>
+</div>
+
+<div class="payroll-report">
+    <div class="report-header">
+        <div>
+            <p class="company-name">Guard Management System</p>
+            <div class="text-muted">Payroll summary report</div>
+            <div class="text-muted">Confidential salary document</div>
+        </div>
+        <div class="report-title">General Payslip</div>
+    </div>
+
+    <div class="summary-grid">
+        <div class="summary-box">
+            <span class="summary-label">Employees</span>
+            <span class="summary-value">{{ salaries|length }}</span>
+        </div>
+        <div class="summary-box">
+            <span class="summary-label">Gross Pay</span>
+            <span class="summary-value">{{ totals.gross_pay|default:"0.00" }}</span>
+        </div>
+        <div class="summary-box">
+            <span class="summary-label">Total Deductions</span>
+            <span class="summary-value">{{ totals.total_deductions|default:"0.00" }}</span>
+        </div>
+        <div class="summary-box">
+            <span class="summary-label">Net Payable</span>
+            <span class="summary-value">{{ totals.net_payable|default:"0.00" }}</span>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle payroll-table mb-0">
+            <thead>
+                <tr>
+                    <th>No.</th>
+                    <th>Employee No.</th>
+                    <th>Employee Name</th>
+                    <th>Type</th>
+                    <th>Pay Period</th>
+                    <th>Days</th>
+                    <th class="amount">Daily Rate</th>
+                    <th class="amount">Gross Pay</th>
+                    <th class="amount">PAYE</th>
+                    <th class="amount">NSSF</th>
+                    <th class="amount">LST</th>
+                    <th class="amount">Advance</th>
+                    <th class="amount">Other</th>
+                    <th class="amount">Net Payable</th>
+                    <th>Payment Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in payroll_rows %}
+                    {% with salary=row.salary payroll=row.payroll %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ salary.employee_number }}</td>
+                        <td>{{ salary.employee }}</td>
+                        <td>{{ salary.employee_type }}</td>
+                        <td>{{ salary.month }} {{ salary.year }}</td>
+                        <td>{{ salary.attendance_days }}</td>
+                        <td class="amount">{{ salary.daily_rate }}</td>
+                        <td class="amount">{{ payroll.gross_pay }}</td>
+                        <td class="amount">{{ payroll.paye }}</td>
+                        <td class="amount">{{ payroll.nssf_employee }}</td>
+                        <td class="amount">{{ payroll.lst_deduction }}</td>
+                        <td class="amount">{{ payroll.advance_deduction }}</td>
+                        <td class="amount">{{ payroll.manual_deductions }}</td>
+                        <td class="amount"><strong>{{ payroll.net_payable }}</strong></td>
+                        <td>{{ salary.payment_date }}</td>
+                    </tr>
+                    {% endwith %}
+                {% empty %}
+                    <tr>
+                        <td colspan="15" class="text-center text-muted py-4">No salary records found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="totals-row">
+                    <th colspan="7">Totals</th>
+                    <td class="amount">{{ totals.gross_pay|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.paye|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.nssf_employee|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.lst_deduction|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.advance_deduction|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.manual_deductions|default:"0.00" }}</td>
+                    <td class="amount">{{ totals.net_payable|default:"0.00" }}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="signature-grid">
+        <div class="signature-line">Prepared By</div>
+        <div class="signature-line">Checked By</div>
+        <div class="signature-line">Approved By</div>
+    </div>
+</div>
+{% endblock %}

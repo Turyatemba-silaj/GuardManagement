@@ -17,6 +17,7 @@
             <thead>
                 <tr>
                     <th>Employee No.</th>
+                    <th>RFID Card</th>
                     <th>Name</th>
                     <th>Phone</th>
                     <th>Email</th>
@@ -30,6 +31,7 @@
                 {% for guard in guards %}
                     <tr>
                         <td>{{ guard.employee_number }}</td>
+                        <td>{{ guard.rfid_card_number|default:"-" }}</td>
                         <td>{{ guard.full_name }}</td>
                         <td>{{ guard.phone }}</td>
                         <td>{{ guard.email }}</td>
@@ -49,7 +51,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No guards found.</td>
+                        <td colspan="9" class="text-center text-muted py-4">No guards found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

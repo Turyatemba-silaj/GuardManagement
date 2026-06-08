@@ -1,110 +1,242 @@
 {% extends "guardmanagementsystem/base.html" %}
 
 {% block content %}
-<div class="page-heading">
-    <div>
-        <h2>Dashboard</h2>
-        <p>Monitor guards, deployments, attendance, assets, incidents, and finance activity.</p>
+<style>
+    .dashboard-stats-strip {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(4, minmax(110px, 1fr));
+        margin-bottom: 22px;
+    }
+
+    .dashboard-stats-strip .dashboard-card {
+        border: 0;
+        border-radius: 8px;
+        min-height: 72px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .dashboard-stats-strip .card-body {
+        align-items: center;
+        display: flex;
+        gap: 10px;
+        justify-content: space-between;
+        padding: 11px 12px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .dashboard-stats-strip .dashboard-card::after {
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        content: "";
+        height: 68px;
+        position: absolute;
+        right: -22px;
+        top: -22px;
+        width: 68px;
+    }
+
+    .dashboard-stats-strip h6 {
+        font-size: 0.68rem;
+        letter-spacing: 0.03em;
+        margin-bottom: 4px;
+    }
+
+    .dashboard-stats-strip h2 {
+        font-size: 1.15rem;
+        line-height: 1;
+        margin-bottom: 0;
+    }
+
+    .dashboard-stats-strip .stat-chip {
+        display: none;
+    }
+
+    .dashboard-stats-strip .stat-icon {
+        align-items: center;
+        background: rgba(255, 255, 255, 0.16);
+        border-radius: 8px;
+        display: inline-flex;
+        flex: 0 0 34px;
+        height: 34px;
+        justify-content: center;
+        width: 34px;
+    }
+
+    .dashboard-stats-strip .stat-icon i {
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+
+    .dashboard-mini-strip {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(6, minmax(110px, 1fr));
+        margin-bottom: 22px;
+    }
+
+    .mini-stat-card {
+        align-items: center;
+        background: #fff;
+        border: 1px solid #dfe7ef;
+        border-radius: 8px;
+        box-shadow: 0 6px 14px rgba(31, 45, 61, 0.06);
+        display: flex;
+        gap: 10px;
+        min-height: 72px;
+        padding: 11px 12px;
+    }
+
+    .mini-stat-icon {
+        align-items: center;
+        background: #eef8f5;
+        border-radius: 8px;
+        color: #117e69;
+        display: inline-flex;
+        flex: 0 0 34px;
+        height: 34px;
+        justify-content: center;
+        width: 34px;
+    }
+
+    .mini-stat-label {
+        color: #6c7a89;
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 800;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+
+    .mini-stat-value {
+        color: #1e2a36;
+        display: block;
+        font-size: 1.15rem;
+        font-weight: 800;
+        line-height: 1.1;
+        margin-top: 4px;
+    }
+
+    @media (max-width: 1199.98px) {
+        .dashboard-stats-strip {
+            grid-template-columns: repeat(2, minmax(180px, 1fr));
+        }
+
+        .dashboard-mini-strip {
+            grid-template-columns: repeat(3, minmax(130px, 1fr));
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .dashboard-stats-strip,
+        .dashboard-mini-strip {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="dashboard-stats-strip">
+    <div class="card dashboard-card card-green">
+        <div class="card-body">
+            <div>
+                <h6>Total Guards</h6>
+                <h2>{{ total_guards }}</h2>
+                <span class="stat-chip"><i class="fa fa-check-circle"></i> Active roster</span>
+            </div>
+            <div class="stat-icon">
+                <i class="fa fa-user-shield"></i>
+            </div>
+        </div>
     </div>
-    <div class="page-actions d-flex gap-2">
-        <a href="{% url 'guard_add' %}" class="btn btn-primary">
-            <i class="fa fa-plus"></i> Add Guard
-        </a>
-        <a href="{% url 'deployment_add' %}" class="btn btn-outline-primary">
-            <i class="fa fa-location-dot"></i> New Deployment
-        </a>
+
+    <div class="card dashboard-card card-blue">
+        <div class="card-body">
+            <div>
+                <h6>Deployments</h6>
+                <h2>{{ total_deployments }}</h2>
+                <span class="stat-chip"><i class="fa fa-location-dot"></i> Site coverage</span>
+            </div>
+            <div class="stat-icon">
+                <i class="fa fa-map-location-dot"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="card dashboard-card card-orange">
+        <div class="card-body">
+            <div>
+                <h6>Attendance</h6>
+                <h2>{{ total_attendance }}</h2>
+                <span class="stat-chip"><i class="fa fa-calendar-check"></i> Daily records</span>
+            </div>
+            <div class="stat-icon">
+                <i class="fa fa-clipboard-check"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="card dashboard-card card-red">
+        <div class="card-body">
+            <div>
+                <h6>Incidents</h6>
+                <h2>{{ total_incidents }}</h2>
+                <span class="stat-chip"><i class="fa fa-eye"></i> Needs review</span>
+            </div>
+            <div class="stat-icon">
+                <i class="fa fa-triangle-exclamation"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-mini-strip">
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-user-tie"></i></span>
+        <span>
+            <span class="mini-stat-label">Supervisors</span>
+            <span class="mini-stat-value">{{ total_supervisors }}</span>
+        </span>
+    </div>
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-building"></i></span>
+        <span>
+            <span class="mini-stat-label">Clients</span>
+            <span class="mini-stat-value">{{ total_clients }}</span>
+        </span>
+    </div>
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-boxes-stacked"></i></span>
+        <span>
+            <span class="mini-stat-label">Assets</span>
+            <span class="mini-stat-value">{{ total_assets }}</span>
+        </span>
+    </div>
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-calendar-days"></i></span>
+        <span>
+            <span class="mini-stat-label">Shifts</span>
+            <span class="mini-stat-value">{{ total_shifts }}</span>
+        </span>
+    </div>
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-money-bill-wave"></i></span>
+        <span>
+            <span class="mini-stat-label">Salaries</span>
+            <span class="mini-stat-value">{{ total_salaries }}</span>
+        </span>
+    </div>
+    <div class="mini-stat-card">
+        <span class="mini-stat-icon"><i class="fa fa-hand-holding-dollar"></i></span>
+        <span>
+            <span class="mini-stat-label">Advances</span>
+            <span class="mini-stat-value">{{ total_advance_requests }}</span>
+        </span>
     </div>
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-sm-6 col-xl-3">
-        <div class="card dashboard-card card-green">
-            <div class="card-body d-flex justify-content-between align-items-start">
-                <div>
-                    <h6>Total Guards</h6>
-                    <h2>{{ total_guards }}</h2>
-                    <span class="stat-chip"><i class="fa fa-check-circle"></i> Active roster</span>
-                </div>
-                <i class="fa fa-user-shield fa-3x"></i>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6 col-xl-3">
-        <div class="card dashboard-card card-blue">
-            <div class="card-body d-flex justify-content-between align-items-start">
-                <div>
-                    <h6>Deployments</h6>
-                    <h2>{{ total_deployments }}</h2>
-                    <span class="stat-chip"><i class="fa fa-location-dot"></i> Site coverage</span>
-                </div>
-                <i class="fa fa-map-location-dot fa-3x"></i>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6 col-xl-3">
-        <div class="card dashboard-card card-orange">
-            <div class="card-body d-flex justify-content-between align-items-start">
-                <div>
-                    <h6>Attendance</h6>
-                    <h2>{{ total_attendance }}</h2>
-                    <span class="stat-chip"><i class="fa fa-calendar-check"></i> Daily records</span>
-                </div>
-                <i class="fa fa-clipboard-check fa-3x"></i>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6 col-xl-3">
-        <div class="card dashboard-card card-red">
-            <div class="card-body d-flex justify-content-between align-items-start">
-                <div>
-                    <h6>Incidents</h6>
-                    <h2>{{ total_incidents }}</h2>
-                    <span class="stat-chip"><i class="fa fa-eye"></i> Needs review</span>
-                </div>
-                <i class="fa fa-triangle-exclamation fa-3x"></i>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-sm-6 col-xl-3">
-        <div class="panel p-3 h-100">
-            <div class="mini-metric">
-                <span>Supervisors</span>
-                <strong>{{ total_supervisors }}</strong>
-            </div>
-            <div class="mini-metric">
-                <span>Clients</span>
-                <strong>{{ total_clients }}</strong>
-            </div>
-            <div class="mini-metric">
-                <span>Assets</span>
-                <strong>{{ total_assets }}</strong>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6 col-xl-3">
-        <div class="panel p-3 h-100">
-            <div class="mini-metric">
-                <span>Shifts</span>
-                <strong>{{ total_shifts }}</strong>
-            </div>
-            <div class="mini-metric">
-                <span>Salaries</span>
-                <strong>{{ total_salaries }}</strong>
-            </div>
-            <div class="mini-metric">
-                <span>Advance Requests</span>
-                <strong>{{ total_advance_requests }}</strong>
-            </div>
-        </div>
-    </div>
-
     <div class="col-xl-6">
         <div class="panel h-100">
             <div class="panel-header">

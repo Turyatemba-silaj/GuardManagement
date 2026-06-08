@@ -122,6 +122,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+LOGIN_URL = "signin"
+LOGIN_REDIRECT_URL = "dashboard"
+LOGOUT_REDIRECT_URL = "signin"
+
 
 # Email
 # Set these environment variables for real supervisor notifications:

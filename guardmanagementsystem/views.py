@@ -2,23 +2,379 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages 
 from django.core.mail import send_mail
 from django.conf import settings
-from django.db.models import Count, Q
+from django.contrib.auth import login, logout
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, SetPasswordForm
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractMonth
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 from django.utils.dateparse import parse_date
+from django.views.decorators.csrf import csrf_exempt
 from urllib.parse import urlencode
 import csv
 import io
+import json
 import re
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import timedelta
+from calendar import monthrange
+from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 
-from .models import *
-from .forms import *
+from .models import (
+    AdvanceRequest,
+    Asset,
+    Attendance,
+    AuditLog,
+    Client,
+    Deployment,
+    DisciplinaryAction,
+    Guard,
+    Incident,
+    IoTDevice,
+    Salary,
+    Shift,
+    Supervisor,
+    recompute_guard_salary_for_month,
+)
+from .forms import (
+    AdvanceRequestForm,
+    AssetForm,
+    AttendanceForm,
+    ClientForm,
+    DeploymentForm,
+    DisciplinaryActionForm,
+    GuardForm,
+    IncidentForm,
+    IoTDeviceForm,
+    ProgramGuardForm,
+    SalaryForm,
+    ShiftForm,
+    SignupForm,
+    SupervisorForm,
+)
 
 
+# MVT DESIGN FOR ACADEMIC DEFENSE
+# Model: database classes imported from models.py.
+# View: function-based views in this file receive requests and return responses.
+# Template: HTML files in templates/ display the data sent by these views.
+#
+# The normal database screens use a simple pattern:
+# 1. list records
+# 2. add a record
+# 3. edit a record
+# 4. delete a record
+#
+# Longer custom functions are kept only where the system needs special behavior:
+# reports, imports, attendance controls, PDFs, payroll, authentication, and IoT.
+
+MONEY_PLACES = Decimal("0.01")
+MONTH_NUMBERS = {
+    "January": 1,
+    "February": 2,
+    "March": 3,
+    "April": 4,
+    "May": 5,
+    "June": 6,
+    "July": 7,
+    "August": 8,
+    "September": 9,
+    "October": 10,
+    "November": 11,
+    "December": 12,
+}
+
+
+# -------------------------------------------------------------------
+# GENERAL HELPER FUNCTIONS
+# -------------------------------------------------------------------
+def money(value):
+    return Decimal(value or 0).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
+
+
+def pdf_escape(value):
+    return str(value or "").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def wrap_pdf_text(text, width=88):
+    words = str(text or "-").split()
+    lines = []
+    current = ""
+
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) > width and current:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+
+    if current:
+        lines.append(current)
+
+    return lines or ["-"]
+
+
+def build_simple_pdf(title, sections):
+    pages = []
+    lines = []
+
+    def add_line(text="", size=10, bold=False):
+        nonlocal lines
+        if len(lines) >= 45:
+            pages.append(lines)
+            lines = []
+        lines.append((text, size, bold))
+
+    add_line("GUARD MANAGEMENT SYSTEM", 16, True)
+    add_line(title, 13, True)
+    add_line(f"Generated: {timezone.localtime().strftime('%Y-%m-%d %I:%M %p')}", 9, False)
+    add_line("")
+
+    for section_title, rows in sections:
+        add_line(section_title.upper(), 11, True)
+        for label, value in rows:
+            text = f"{label}: {value or '-'}"
+            for wrapped_line in wrap_pdf_text(text):
+                add_line(wrapped_line)
+        add_line("")
+
+    add_line("AUTHORIZATION AND CLOSURE", 11, True)
+    add_line("Prepared By: ______________________________    Signature: ______________________________")
+    add_line("Reviewed By: ______________________________    Signature: ______________________________")
+    add_line("Approved By: ______________________________    Date Closed: ____________________________")
+
+    if lines:
+        pages.append(lines)
+
+    objects = []
+    page_refs = []
+    font_regular_ref = 3
+    font_bold_ref = 4
+
+    objects.append("<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append("<< /Type /Pages /Kids [] /Count 0 >>")
+    objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+
+    for page_lines in pages:
+        content_parts = ["BT", "50 790 Td"]
+        current_size = None
+        current_font = None
+
+        for text, size, bold in page_lines:
+            font = "F2" if bold else "F1"
+            if current_size != size or current_font != font:
+                content_parts.append(f"/{font} {size} Tf")
+                current_size = size
+                current_font = font
+            content_parts.append(f"({pdf_escape(text)}) Tj")
+            content_parts.append("0 -16 Td")
+
+        content_parts.append("ET")
+        content = "\n".join(content_parts).encode("latin-1", errors="replace")
+        content_ref = len(objects) + 1
+        page_ref = len(objects) + 2
+        objects.append(f"<< /Length {len(content)} >>\nstream\n{content.decode('latin-1')}\nendstream")
+        objects.append(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 {font_regular_ref} 0 R /F2 {font_bold_ref} 0 R >> >> "
+            f"/Contents {content_ref} 0 R >>"
+        )
+        page_refs.append(page_ref)
+
+    objects[1] = f"<< /Type /Pages /Kids [{' '.join(f'{ref} 0 R' for ref in page_refs)}] /Count {len(page_refs)} >>"
+
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{index} 0 obj\n{obj}\nendobj\n".encode("latin-1", errors="replace"))
+
+    xref_at = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF".encode("ascii")
+    )
+    return bytes(pdf)
+
+
+# -------------------------------------------------------------------
+# PUBLIC AND AUTHENTICATION VIEWS
+# -------------------------------------------------------------------
+def welcome(request):
+    return render(request, "guardmanagementsystem/welcome.html")
+
+
+def get_client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0]
+    return request.META.get("REMOTE_ADDR")
+
+
+def log_action(request, action, description):
+    user = request.user if request.user.is_authenticated else None
+    AuditLog.objects.create(
+        user=user,
+        action=action,
+        description=description,
+        ip_address=get_client_ip(request)
+    )
+
+
+def signup(request):
+    if request.method == "POST":
+        form = SignupForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            messages.success(request, "Account created successfully. You can now sign in.")
+            AuditLog.objects.create(
+                user=user,
+                action="SIGNUP",
+                description="New user account was created.",
+                ip_address=get_client_ip(request)
+            )
+            return redirect("signin")
+    else:
+        form = SignupForm()
+
+    return render(request, "guardmanagementsystem/auth_form.html", {
+        "form": form,
+        "title": "Create Account",
+        "button_text": "Sign Up",
+        "helper_link": "signin",
+        "helper_text": "Already have an account? Sign in"
+    })
+
+
+def signin(request):
+    if request.method == "POST":
+        form = AuthenticationForm(request, data=request.POST)
+        if form.is_valid():
+            user = form.get_user()
+            login(request, user)
+            log_action(request, "SIGNIN", "User signed in.")
+            messages.success(request, "Signed in successfully.")
+            return redirect("dashboard")
+    else:
+        form = AuthenticationForm()
+
+    for field in form.fields.values():
+        field.widget.attrs.update({"class": "form-control"})
+
+    return render(request, "guardmanagementsystem/auth_form.html", {
+        "form": form,
+        "title": "Sign In",
+        "button_text": "Sign In",
+        "helper_link": "forgot_password",
+        "helper_text": "Forgot password?"
+    })
+
+
+@login_required
+def signout(request):
+    log_action(request, "LOGOUT", "User signed out.")
+    logout(request)
+    messages.success(request, "Signed out successfully.")
+    return redirect("signin")
+
+
+def forgot_password(request):
+    if request.method == "POST":
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            email = form.cleaned_data["email"]
+            users = User.objects.filter(email__iexact=email, is_active=True)
+            for user in users:
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = default_token_generator.make_token(user)
+                reset_url = request.build_absolute_uri(
+                    f"/reset-password/{uid}/{token}/"
+                )
+                send_mail(
+                    "Reset your Guard Management password",
+                    f"Use this link to reset your password: {reset_url}",
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+                AuditLog.objects.create(
+                    user=user,
+                    action="PASSWORD_RESET_REQUEST",
+                    description="Password reset link was requested.",
+                    ip_address=get_client_ip(request)
+                )
+            messages.success(request, "If the email exists, a reset link has been sent.")
+            return redirect("signin")
+    else:
+        form = PasswordResetForm()
+
+    for field in form.fields.values():
+        field.widget.attrs.update({"class": "form-control"})
+
+    return render(request, "guardmanagementsystem/auth_form.html", {
+        "form": form,
+        "title": "Forgot Password",
+        "button_text": "Send Reset Link",
+        "helper_link": "signin",
+        "helper_text": "Back to sign in"
+    })
+
+
+def reset_password(request, uidb64, token):
+    try:
+        user_id = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    if not user or not default_token_generator.check_token(user, token):
+        messages.error(request, "Password reset link is invalid or expired.")
+        return redirect("forgot_password")
+
+    if request.method == "POST":
+        form = SetPasswordForm(user, request.POST)
+        if form.is_valid():
+            form.save()
+            AuditLog.objects.create(
+                user=user,
+                action="PASSWORD_RESET",
+                description="User reset their password.",
+                ip_address=get_client_ip(request)
+            )
+            messages.success(request, "Password reset successfully. Please sign in.")
+            return redirect("signin")
+    else:
+        form = SetPasswordForm(user)
+
+    for field in form.fields.values():
+        field.widget.attrs.update({"class": "form-control"})
+
+    return render(request, "guardmanagementsystem/auth_form.html", {
+        "form": form,
+        "title": "Reset Password",
+        "button_text": "Reset Password",
+        "helper_link": "signin",
+        "helper_text": "Back to sign in"
+    })
+
+
+# -------------------------------------------------------------------
+# BUSINESS HELPER FUNCTIONS USED BY THE FUNCTION-BASED VIEWS
+# -------------------------------------------------------------------
 def send_incident_notification(incident):
     supervisor = incident.reported_by
 
@@ -73,12 +429,97 @@ def has_active_deployment(guard, work_date, site=None):
     return deployments.exists()
 
 
+def get_matching_deployment(guard, work_date, site=None, client_name=None):
+    if not guard or not work_date:
+        return None
+
+    deployments = Deployment.objects.select_related("client").filter(
+        guard=guard,
+        status="Active",
+        start_date__lte=work_date,
+    ).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=work_date)
+    )
+
+    if site:
+        deployments = deployments.filter(site_location=site)
+
+    if client_name:
+        deployments = deployments.filter(client__client_name__iexact=client_name)
+
+    return deployments.first()
+
+
+def record_iot_attendance(card_id, site_location, action="check_in"):
+    card_id = str(card_id or "").strip()
+    site_location = str(site_location or "").strip()
+    action = str(action or "check_in").strip().lower()
+
+    if not card_id:
+        return False, "RFID card number is required.", None
+
+    if not site_location:
+        return False, "Site location is required.", None
+
+    guard = Guard.objects.filter(rfid_card_number=card_id).first()
+    if not guard:
+        return False, "No guard is registered with this RFID card.", None
+
+    if guard.status != "Active":
+        return False, "This guard is not active.", None
+
+    today = timezone.localdate()
+    current_time = timezone.localtime().time()
+
+    if not has_active_deployment(guard, today, site_location):
+        return False, "Guard is not actively deployed at this site today.", None
+
+    attendance, created = Attendance.objects.get_or_create(
+        guard=guard,
+        attendance_date=today,
+        defaults={
+            "status": "Present",
+            "check_in_time": current_time,
+        },
+    )
+
+    if action == "check_out":
+        attendance.check_out_time = current_time
+        attendance.save()
+        return True, f"Check-out recorded for {guard.full_name}.", attendance
+
+    if created:
+        return True, f"Check-in recorded for {guard.full_name}.", attendance
+
+    if not attendance.check_in_time:
+        attendance.check_in_time = current_time
+        attendance.status = "Present"
+        attendance.save()
+        return True, f"Check-in recorded for {guard.full_name}.", attendance
+
+    return True, f"{guard.full_name} already has attendance for today.", attendance
+
+
 def replacement_guard_is_available(replacement_guard, attendance):
     if not replacement_guard or not attendance:
         return True
 
     if replacement_guard == attendance.guard:
         return False
+
+    target_shift = Shift.objects.filter(
+        guard=attendance.guard,
+        start_time=attendance.attendance_date,
+    ).first()
+    replacement_shift = Shift.objects.filter(
+        guard=replacement_guard,
+        start_time=attendance.attendance_date,
+    ).first()
+    target_shift_code = get_shift_code(target_shift)
+    replacement_shift_code = get_shift_code(replacement_shift)
+
+    if target_shift_code == "D/N":
+        return replacement_shift is None or replacement_shift_code == "D/N"
 
     already_scheduled = Attendance.objects.filter(
         guard=replacement_guard,
@@ -107,6 +548,7 @@ def get_shift_code(shift):
         "WEEKEND": "D/N",
         "DAY/NIGHT": "D/N",
         "D/N": "D/N",
+        "DN": "D/N",
         "PUBLIC HOLIDAY": "PH",
         "PUBLIC_HOLIDAY": "PH",
         "HOLIDAY": "PH",
@@ -130,6 +572,9 @@ def normalize_header(value):
 
 def normalize_shift_type(value):
     shift_type = str(value or "").strip().lower()
+
+    if shift_type in ["n/d", "nd", "night/day", "night_day"]:
+        return None
 
     if shift_type in ["n", "night", "night_shift"]:
         return "N"
@@ -333,6 +778,22 @@ def find_guard_for_roster_row(row):
     return None
 
 
+def find_client_for_roster_row(row):
+    client_name = str(get_row_value(row, "client", "client_name", "deployment_area")).strip()
+
+    if client_name:
+        return Client.objects.filter(client_name__iexact=client_name).first()
+
+    return None
+
+
+def schedule_month_bounds(work_date):
+    return (
+        date(work_date.year, work_date.month, 1),
+        date(work_date.year, work_date.month, monthrange(work_date.year, work_date.month)[1]),
+    )
+
+
 def parse_schedule_period(rows):
     for row in rows:
         row_text = " ".join(str(value or "").strip() for value in row if str(value or "").strip())
@@ -401,7 +862,7 @@ def expand_wide_roster_rows(rows):
             roster_row.update({
                 "shift_date": shift_date.isoformat(),
                 "shift_type": shift_code,
-                "shift_name": f"Imported Roster ({shift_code.upper()})",
+                "shift_name": f"Imported Schedule ({shift_code.upper()})",
                 "attendance_status": "Present",
             })
             expanded_rows.append(roster_row)
@@ -409,9 +870,170 @@ def expand_wide_roster_rows(rows):
     return expanded_rows
 
 
+def is_monthly_schedule_header(row):
+    headers = [normalize_header(value) for value in row]
+    has_basic_columns = all(value in headers for value in ["guard", "client", "location"])
+    day_columns = sum(1 for value in row if str(value or "").strip().isdigit())
+    return has_basic_columns and day_columns >= 7
+
+
+def expand_monthly_schedule_rows(rows, year, month):
+    header_index = None
+
+    for index, row in enumerate(rows):
+        if is_monthly_schedule_header(row):
+            header_index = index
+            break
+
+    if header_index is None:
+        return []
+
+    last_day = monthrange(year, month)[1]
+    header = rows[header_index]
+    normalized_headers = [normalize_header(value) for value in header]
+    day_columns = []
+
+    for column_index, value in enumerate(header):
+        text = str(value or "").strip()
+        if not text.isdigit():
+            continue
+
+        day_number = int(text)
+        if 1 <= day_number <= last_day:
+            day_columns.append((column_index, date(year, month, day_number)))
+
+    expanded_rows = []
+
+    for row_number, row in enumerate(rows[header_index + 1:], start=header_index + 2):
+        if not any(str(value or "").strip() for value in row):
+            continue
+
+        row_values = {
+            normalized_headers[index]: value
+            for index, value in enumerate(row)
+            if index < len(normalized_headers) and normalized_headers[index]
+        }
+
+        guard_name = str(get_row_value(row_values, "guard", "name", "guard_name", "full_name")).strip()
+        if not guard_name:
+            continue
+
+        for column_index, shift_date in day_columns:
+            shift_code = str(row[column_index] if column_index < len(row) else "").strip().upper()
+
+            if not shift_code or shift_code in ["-", "_", "O", "OFF", "REST", "R"]:
+                continue
+
+            roster_row = dict(row_values)
+            roster_row.update({
+                "row_number": row_number,
+                "shift_date": shift_date.isoformat(),
+                "shift_type": shift_code,
+                "shift_name": f"Scheduled Duty ({shift_code})",
+                "attendance_status": "Present",
+            })
+            expanded_rows.append(roster_row)
+
+    return expanded_rows
+
+
+def clean_schedule_period_value(value, fallback):
+    try:
+        return int(value or fallback)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def build_scheduled_guard_report(deployment_area="", site="", start_date="", end_date=""):
+    today = timezone.localdate()
+    deployments = Deployment.objects.select_related("client", "guard").all()
+
+    if deployment_area:
+        deployments = deployments.filter(client_id=deployment_area)
+
+    if site:
+        deployments = deployments.filter(site_location=site)
+
+    report_start = parse_date(start_date or "") or date(today.year, today.month, 1)
+    report_end = parse_date(end_date or "") or date(
+        report_start.year,
+        report_start.month,
+        monthrange(report_start.year, report_start.month)[1]
+    )
+    day_numbers = list(range(1, monthrange(report_start.year, report_start.month)[1] + 1))
+    day_headings = [
+        {
+            "number": day_number,
+            "weekday": date(report_start.year, report_start.month, day_number).strftime("%a"),
+        }
+        for day_number in day_numbers
+    ]
+
+    deployment_guard_ids = list(deployments.values_list("guard_id", flat=True))
+    shifts = Shift.objects.select_related("guard").filter(
+        guard_id__in=deployment_guard_ids,
+        start_time__gte=report_start,
+        start_time__lte=report_end,
+    )
+
+    report_index = {}
+    for shift in shifts:
+        deployment = deployments.filter(
+            guard=shift.guard,
+            start_date__lte=shift.start_time,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=shift.start_time)
+        ).first()
+        if not deployment:
+            continue
+
+        key = (shift.guard_id, deployment.client_id, deployment.site_location)
+        row = report_index.setdefault(key, {
+            "guard": shift.guard.full_name,
+            "client": deployment.client.client_name,
+            "site": deployment.site_location,
+            "shift_type": "",
+            "cells": {day_number: "" for day_number in day_numbers},
+        })
+
+        shift_code = get_shift_code(shift)
+        if shift.start_time.month == report_start.month and shift.start_time.year == report_start.year:
+            row["cells"][shift.start_time.day] = shift_code
+
+    for row in report_index.values():
+        used_codes = sorted({code for code in row["cells"].values() if code})
+        row["shift_type"] = used_codes[0] if len(used_codes) == 1 else ("Mixed" if used_codes else "-")
+        row["day_cells"] = [row["cells"][day_number] for day_number in day_numbers]
+
+    report_rows = sorted(
+        report_index.values(),
+        key=lambda row: (row["site"], row["guard"])
+    )
+
+    return {
+        "day_headings": day_headings,
+        "day_numbers": day_numbers,
+        "report_rows": report_rows,
+        "report_start": report_start,
+        "report_end": report_end,
+        "report_month": report_start.strftime("%B %Y"),
+    }
+
+
+# -------------------------------------------------------------------
+# REPORT AND IMPORT FUNCTION-BASED VIEWS
+# -------------------------------------------------------------------
+@login_required
 def shift_import(request):
     if request.method == "POST":
         roster_file = request.FILES.get("roster_file")
+        schedule_year = clean_schedule_period_value(request.POST.get("schedule_year"), timezone.localdate().year)
+        schedule_month = clean_schedule_period_value(request.POST.get("schedule_month"), timezone.localdate().month)
+        required_guards = clean_schedule_period_value(request.POST.get("required_guards"), 1)
+        if schedule_month < 1 or schedule_month > 12:
+            schedule_month = timezone.localdate().month
+        if required_guards < 1:
+            required_guards = 1
 
         if not roster_file:
             messages.error(request, "Choose a roster file to import.")
@@ -423,33 +1045,89 @@ def shift_import(request):
             messages.error(request, str(error))
             return redirect("shift_import")
 
-        rows = expand_wide_roster_rows(sheet_rows) or rows_to_dicts(sheet_rows)
+        rows = (
+            expand_monthly_schedule_rows(sheet_rows, schedule_year, schedule_month)
+            or expand_wide_roster_rows(sheet_rows)
+            or rows_to_dicts(sheet_rows)
+        )
         created_count = 0
+        updated_count = 0
+        deployment_created_count = 0
+        deployment_existing_count = 0
         attendance_created_count = 0
         attendance_existing_count = 0
+        capacity_skipped_count = 0
         skipped_rows = []
 
         for row_number, row in enumerate(rows, start=2):
             normalized_row = {normalize_header(key): value for key, value in row.items()}
-            employee_number = str(get_row_value(normalized_row, "employee_number", "employee_no", "emp_no", "emp_number")).strip()
             shift_date_value = get_row_value(normalized_row, "shift_date", "date", "date_scheduled", "start_date")
             shift_type_value = get_row_value(normalized_row, "shift_type", "shift", "d_n", "d_or_n")
             shift_name = str(get_row_value(normalized_row, "shift_name", "name") or "Imported Shift").strip()
             attendance_status_value = get_row_value(normalized_row, "attendance_status", "status", "attendance", "present")
             absence_reason = str(get_row_value(normalized_row, "absence_reason", "reason") or "").strip()
+            site_location = str(get_row_value(normalized_row, "site_location", "site", "location")).strip()
+            client_name = str(get_row_value(normalized_row, "client", "client_name")).strip()
 
             guard = find_guard_for_roster_row(normalized_row)
+            client = find_client_for_roster_row(normalized_row)
             shift_date = parse_excel_serial_date(shift_date_value)
+            raw_shift_code = str(shift_type_value or "").strip().upper()
+
+            if raw_shift_code in ["", "-", "_", "O", "OFF", "REST", "R"]:
+                continue
+
+            if raw_shift_code in ["N/D", "ND", "NIGHT/DAY", "NIGHT_DAY"]:
+                skipped_rows.append(normalized_row.get("row_number", row_number))
+                continue
 
             if not guard or not shift_date:
-                skipped_rows.append(row_number)
+                skipped_rows.append(normalized_row.get("row_number", row_number))
                 continue
 
-            if not has_active_deployment(guard, shift_date):
-                skipped_rows.append(row_number)
-                continue
+            deployment = get_matching_deployment(guard, shift_date, site_location, client_name)
+            if not deployment:
+                if not client or not site_location:
+                    skipped_rows.append(normalized_row.get("row_number", row_number))
+                    continue
+
+                deployment_start, deployment_end = schedule_month_bounds(shift_date)
+                deployment, deployment_created = Deployment.objects.get_or_create(
+                    guard=guard,
+                    client=client,
+                    site_location=site_location,
+                    start_date=deployment_start,
+                    end_date=deployment_end,
+                    defaults={"status": "Active"},
+                )
+
+                if deployment.status != "Active":
+                    deployment.status = "Active"
+                    deployment.save(update_fields=["status"])
+
+                if deployment_created:
+                    deployment_created_count += 1
+                else:
+                    deployment_existing_count += 1
+            else:
+                deployment_existing_count += 1
 
             shift_type = normalize_shift_type(shift_type_value)
+            if not shift_type:
+                skipped_rows.append(normalized_row.get("row_number", row_number))
+                continue
+
+            existing_count = scheduled_guard_count_for_site(
+                deployment.client,
+                deployment.site_location,
+                shift_date,
+                exclude_guard_ids=[guard.guard_id],
+            )
+            existing_guard_shift = Shift.objects.filter(guard=guard, start_time=shift_date).exists()
+            if not existing_guard_shift and existing_count >= required_guards:
+                capacity_skipped_count += 1
+                continue
+
             _, created = Shift.objects.update_or_create(
                 guard=guard,
                 start_time=shift_date,
@@ -462,6 +1140,8 @@ def shift_import(request):
 
             if created:
                 created_count += 1
+            else:
+                updated_count += 1
 
             attendance = Attendance.objects.filter(guard=guard, attendance_date=shift_date).first()
             if attendance:
@@ -476,9 +1156,17 @@ def shift_import(request):
                 attendance_created_count += 1
 
         if created_count:
-            messages.success(request, f"Imported {created_count} duty roster shift(s).")
+            messages.success(request, f"Imported {created_count} scheduled duty shift(s).")
         else:
-            messages.info(request, "No new duty roster shifts were imported.")
+            messages.info(request, "No new scheduled duty shifts were imported.")
+
+        if updated_count:
+            messages.info(request, f"Updated {updated_count} existing scheduled duty shift(s).")
+
+        if deployment_created_count:
+            messages.success(request, f"Created {deployment_created_count} scheduled guard deployment(s) from the imported roster.")
+        elif deployment_existing_count:
+            messages.info(request, "Imported schedule rows were linked to existing scheduled guard deployments.")
 
         if attendance_created_count:
             messages.success(request, f"Added {attendance_created_count} uploaded row(s) to Attendance.")
@@ -486,20 +1174,26 @@ def shift_import(request):
             messages.info(request, "Uploaded rows were already available in Attendance.")
 
         if skipped_rows:
-            messages.warning(request, f"Skipped row(s): {', '.join(str(row) for row in skipped_rows)}.")
+            messages.warning(request, f"Skipped row(s): {', '.join(str(row) for row in skipped_rows)} because they did not match an existing guard/client/site.")
+
+        if capacity_skipped_count:
+            messages.warning(request, f"Skipped {capacity_skipped_count} schedule row(s) because they exceeded {required_guards} required guard(s) for the site.")
 
         return redirect("attendance_list")
 
-    return render(request, "guardmanagementsystem/shift_import.html")
+    return render(request, "guardmanagementsystem/shift_import.html", {
+        "current_month": timezone.localdate().month,
+        "current_year": timezone.localdate().year,
+        "required_guards": 1,
+    })
 
 
+@login_required
 def schedule_report(request):
     deployment_area = request.GET.get("deployment_area", "")
     site = request.GET.get("site", "")
     start_date = request.GET.get("start_date", "")
     end_date = request.GET.get("end_date", "")
-
-    deployments = Deployment.objects.select_related("client", "guard").all()
     clients = Client.objects.all().order_by("client_name")
     sites = (
         Deployment.objects.exclude(site_location="")
@@ -507,66 +1201,87 @@ def schedule_report(request):
         .distinct()
         .order_by("site_location")
     )
-
-    if deployment_area:
-        deployments = deployments.filter(client_id=deployment_area)
-
-    if site:
-        deployments = deployments.filter(site_location=site)
-
-    deployment_guard_ids = list(deployments.values_list("guard_id", flat=True))
-    shifts = Shift.objects.select_related("guard").filter(guard_id__in=deployment_guard_ids)
-
-    if start_date:
-        shifts = shifts.filter(start_time__gte=start_date)
-
-    if end_date:
-        shifts = shifts.filter(start_time__lte=end_date)
-
-    deployment_by_guard = {}
-    for deployment in deployments:
-        deployment_by_guard.setdefault(deployment.guard_id, deployment)
-
-    report_index = {}
-    for shift in shifts:
-        deployment = deployment_by_guard.get(shift.guard_id)
-        if not deployment:
-            continue
-
-        key = (shift.start_time, deployment.site_location)
-        row = report_index.setdefault(key, {
-            "date_scheduled": shift.start_time,
-            "site_scheduled": deployment.site_location,
-            "day_shift": 0,
-            "night_shift": 0,
-        })
-
-        shift_code = get_shift_code(shift)
-
-        if shift_code == "N":
-            row["night_shift"] += 1
-        elif shift_code == "D/N":
-            row["day_shift"] += 1
-            row["night_shift"] += 1
-        else:
-            row["day_shift"] += 1
-
-    report_rows = sorted(
-        report_index.values(),
-        key=lambda row: (row["date_scheduled"], row["site_scheduled"])
-    )
+    report_data = build_scheduled_guard_report(deployment_area, site, start_date, end_date)
 
     return render(request, "guardmanagementsystem/schedule_report.html", {
         "clients": clients,
         "sites": sites,
-        "report_rows": report_rows,
+        "day_headings": report_data["day_headings"],
+        "report_rows": report_data["report_rows"],
+        "report_month": report_data["report_month"],
+        "export_query": urlencode({
+            "deployment_area": deployment_area,
+            "site": site,
+            "start_date": report_data["report_start"].isoformat(),
+            "end_date": report_data["report_end"].isoformat(),
+        }),
         "selected_deployment_area": deployment_area,
         "selected_site": site,
-        "selected_start_date": start_date,
-        "selected_end_date": end_date,
+        "selected_start_date": report_data["report_start"].isoformat(),
+        "selected_end_date": report_data["report_end"].isoformat(),
     })
 
 
+@login_required
+def schedule_report_csv_export(request):
+    report_data = build_scheduled_guard_report(
+        request.GET.get("deployment_area", ""),
+        request.GET.get("site", ""),
+        request.GET.get("start_date", ""),
+        request.GET.get("end_date", ""),
+    )
+    response = HttpResponse(content_type="text/csv")
+    filename = f"scheduled_guard_report_{report_data['report_start'].strftime('%Y_%m')}.csv"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "Guard",
+        "Client",
+        "Location",
+        "Shift type",
+        *[day["number"] for day in report_data["day_headings"]],
+    ])
+    writer.writerow([
+        "",
+        "",
+        "",
+        "",
+        *[day["weekday"] for day in report_data["day_headings"]],
+    ])
+
+    for row in report_data["report_rows"]:
+        writer.writerow([
+            row["guard"],
+            row["client"],
+            row["site"],
+            row["shift_type"],
+            *row["day_cells"],
+        ])
+
+    return response
+
+
+@login_required
+def schedule_csv_template(request):
+    today = timezone.localdate()
+    schedule_year = clean_schedule_period_value(request.GET.get("year"), today.year)
+    schedule_month = clean_schedule_period_value(request.GET.get("month"), today.month)
+    if schedule_month < 1 or schedule_month > 12:
+        schedule_month = today.month
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="scheduled_guard_template.csv"'
+
+    writer = csv.writer(response)
+    day_numbers = list(range(1, monthrange(schedule_year, schedule_month)[1] + 1))
+    writer.writerow(["Guard", "Client", "Location", "Shift type", *day_numbers])
+    writer.writerow(["John Doe", "ABC Ltd", "Main Gate", "D", *["D" if day % 7 else "O" for day in day_numbers]])
+
+    return response
+
+
+@login_required
 def attendance_query_report(request):
     employee_number = request.GET.get("employee_number", "")
     start_date = request.GET.get("start_date", "")
@@ -622,6 +1337,7 @@ def attendance_query_report(request):
     })
 
 
+@login_required
 def dashboard(request):
     current_year = timezone.now().year
     month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -701,310 +1417,559 @@ def dashboard(request):
 
     return render(request, "guardmanagementsystem/dashboard.html", context)
 
-    
 
+@login_required
+def audit_log_list(request):
+    logs = AuditLog.objects.select_related("user").order_by("-created_at")[:200]
+    return render(request, "guardmanagementsystem/audit_log_list.html", {
+        "logs": logs
+    })
+
+
+# -------------------------------------------------------------------
+# SIMPLE CRUD HELPER FUNCTIONS
+# These keep normal pages easy to explain: list, add, edit, delete.
+# -------------------------------------------------------------------
+def show_records(request, queryset, template_name, context_name):
+    return render(request, template_name, {
+        context_name: queryset
+    })
+
+
+def add_record(
+    request,
+    form_class,
+    title,
+    redirect_name,
+    success_message,
+    template_name="guardmanagementsystem/form.html",
+    extra_context=None
+):
+    if request.method == "POST":
+        form = form_class(request.POST)
+
+        if form.is_valid():
+            record = form.save()
+            log_action(request, "CREATE", f"Created {record}.")
+            messages.success(request, success_message)
+            return redirect(redirect_name)
+    else:
+        form = form_class()
+
+    context = {
+        "form": form,
+        "title": title
+    }
+    if extra_context:
+        context.update(extra_context)
+
+    return render(request, template_name, context)
+
+
+def edit_record(
+    request,
+    model_class,
+    form_class,
+    lookup,
+    title,
+    redirect_name,
+    success_message,
+    template_name="guardmanagementsystem/form.html",
+    extra_context=None
+):
+    record = get_object_or_404(model_class, **lookup)
+
+    if request.method == "POST":
+        form = form_class(request.POST, instance=record)
+
+        if form.is_valid():
+            record = form.save()
+            log_action(request, "UPDATE", f"Updated {record}.")
+            messages.success(request, success_message)
+            return redirect(redirect_name)
+    else:
+        form = form_class(instance=record)
+
+    context = {
+        "form": form,
+        "title": title
+    }
+    if extra_context:
+        context.update(extra_context)
+
+    return render(request, template_name, context)
+
+
+def delete_record(request, model_class, lookup, title, redirect_name, success_message):
+    record = get_object_or_404(model_class, **lookup)
+
+    if request.method == "POST":
+        description = f"Deleted {record}."
+        record.delete()
+        log_action(request, "DELETE", description)
+        messages.success(request, success_message)
+        return redirect(redirect_name)
+
+    return render(request, "guardmanagementsystem/delete.html", {
+        "object": record,
+        "title": title
+    })
+
+
+# -------------------------------------------------------------------
+# MAIN RECORD FUNCTION-BASED VIEWS
+# -------------------------------------------------------------------
+@login_required
 def guard_list(request):
-    guards = Guard.objects.all()
-    return render(request, "guardmanagementsystem/guard_list.html", {
-        "guards": guards
-    })
+    return show_records(request, Guard.objects.all(), "guardmanagementsystem/guard_list.html", "guards")
 
 
+@login_required
 def guard_add(request):
-    if request.method == "POST":
-        form = GuardForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Guard added successfully")
-            return redirect("guard_list")
-    else:
-        form = GuardForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Guard"
-    })
+    return add_record(request, GuardForm, "Add Guard", "guard_list", "Guard added successfully")
 
 
+@login_required
 def guard_edit(request, id):
-    guard = get_object_or_404(Guard, guard_id=id)
-
-    if request.method == "POST":
-        form = GuardForm(request.POST, instance=guard)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Guard updated successfully")
-            return redirect("guard_list")
-    else:
-        form = GuardForm(instance=guard)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Guard"
-    })
+    return edit_record(request, Guard, GuardForm, {"guard_id": id}, "Edit Guard", "guard_list", "Guard updated successfully")
 
 
+@login_required
 def guard_delete(request, id):
-    guard = get_object_or_404(Guard, guard_id=id)
-
-    if request.method == "POST":
-        guard.delete()
-        messages.success(request, "Guard deleted successfully")
-        return redirect("guard_list")
-
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": guard,
-        "title": "Delete Guard"
-    })
+    return delete_record(request, Guard, {"guard_id": id}, "Delete Guard", "guard_list", "Guard deleted successfully")
 
 
+@login_required
 def supervisor_list(request):
-    supervisors = Supervisor.objects.all()
-    return render(request, "guardmanagementsystem/supervisor_list.html", {
-        "supervisors": supervisors
-    })
+    return show_records(request, Supervisor.objects.all(), "guardmanagementsystem/supervisor_list.html", "supervisors")
 
 
+@login_required
 def supervisor_add(request):
-    if request.method == "POST":
-        form = SupervisorForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Supervisor added successfully")
-            return redirect("supervisor_list")
-    else:
-        form = SupervisorForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Supervisor"
-    })
+    return add_record(request, SupervisorForm, "Add Supervisor", "supervisor_list", "Supervisor added successfully")
 
 
+@login_required
 def supervisor_edit(request, id):
-    supervisor = get_object_or_404(Supervisor, supervisor_id=id)
-
-    if request.method == "POST":
-        form = SupervisorForm(request.POST, instance=supervisor)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Supervisor updated successfully")
-            return redirect("supervisor_list")
-    else:
-        form = SupervisorForm(instance=supervisor)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Supervisor"
-    })
+    return edit_record(request, Supervisor, SupervisorForm, {"supervisor_id": id}, "Edit Supervisor", "supervisor_list", "Supervisor updated successfully")
 
 
+@login_required
 def supervisor_delete(request, id):
-    supervisor = get_object_or_404(Supervisor, supervisor_id=id)
+    return delete_record(request, Supervisor, {"supervisor_id": id}, "Delete Supervisor", "supervisor_list", "Supervisor deleted successfully")
 
-    if request.method == "POST":
-        supervisor.delete()
-        messages.success(request, "Supervisor deleted successfully")
-        return redirect("supervisor_list")
-
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": supervisor,
-        "title": "Delete Supervisor"
-    })
-
+@login_required
 def client_list(request):
-    clients = Client.objects.all()
-    return render(request, "guardmanagementsystem/client_list.html", {
-        "clients": clients
-    })
+    return show_records(request, Client.objects.all(), "guardmanagementsystem/client_list.html", "clients")
 
 
+@login_required
 def client_add(request):
-    if request.method == "POST":
-        form = ClientForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Client added successfully")
-            return redirect("client_list")
-    else:
-        form = ClientForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Client"
-    })
+    return add_record(request, ClientForm, "Add Client", "client_list", "Client added successfully")
 
 
+@login_required
 def client_edit(request, id):
-    client = get_object_or_404(Client, client_id=id)
-
-    if request.method == "POST":
-        form = ClientForm(request.POST, instance=client)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Client updated successfully")
-            return redirect("client_list")
-    else:
-        form = ClientForm(instance=client)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Client"
-    })
+    return edit_record(request, Client, ClientForm, {"client_id": id}, "Edit Client", "client_list", "Client updated successfully")
 
 
+@login_required
 def client_delete(request, id):
-    client = get_object_or_404(Client, client_id=id)
+    return delete_record(request, Client, {"client_id": id}, "Delete Client", "client_list", "Client deleted successfully")
 
-    if request.method == "POST":
-        client.delete()
-        messages.success(request, "Client deleted successfully")
-        return redirect("client_list")
-
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": client,
-        "title": "Delete Client"
-    })
-
+@login_required
 def deployment_list(request):
     deployments = Deployment.objects.select_related("guard", "client").all()
-    return render(request, "guardmanagementsystem/deployment_list.html", {
-        "deployments": deployments
-    })
+    return show_records(request, deployments, "guardmanagementsystem/deployment_list.html", "deployments")
 
 
+@login_required
 def deployment_add(request):
-    if request.method == "POST":
-        form = DeploymentForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Deployment added successfully.")
-            return redirect("deployment_list")
-    else:
-        form = DeploymentForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Deployment"
-    })
+    return add_record(request, DeploymentForm, "Add Deployment", "deployment_list", "Deployment added successfully.")
 
 
+def normalize_schedule_day_code(value):
+    code = str(value or "").strip().upper()
+
+    if code in ["", "-", "_", "O", "OFF", "R", "REST"]:
+        return None, None
+
+    code_map = {
+        "D": "D",
+        "DAY": "D",
+        "N": "N",
+        "NIGHT": "N",
+        "D/N": "D/N",
+        "DN": "D/N",
+        "DAY/NIGHT": "D/N",
+        "PH": "PH",
+        "PUBLIC HOLIDAY": "PH",
+        "HOLIDAY": "PH",
+    }
+
+    if code in code_map:
+        return code_map[code], None
+
+    return None, code
+
+
+def build_schedule_days(schedule_year, schedule_month, posted_values=None):
+    posted_values = posted_values or {}
+    last_day = monthrange(schedule_year, schedule_month)[1]
+    days = []
+
+    for day_number in range(1, 32):
+        if day_number <= last_day:
+            day_date = date(schedule_year, schedule_month, day_number)
+            weekday = day_date.strftime("%a")
+        else:
+            weekday = ""
+
+        days.append({
+            "number": day_number,
+            "weekday": weekday,
+            "is_valid": day_number <= last_day,
+            "value": posted_values.get(f"day_{day_number}", ""),
+        })
+
+    return days
+
+
+def scheduled_guard_count_for_site(client, site_location, shift_date, exclude_guard_ids=None):
+    exclude_guard_ids = exclude_guard_ids or []
+    deployed_guard_ids = Deployment.objects.filter(
+        client=client,
+        site_location=site_location,
+        status="Active",
+        start_date__lte=shift_date,
+    ).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=shift_date)
+    ).values_list("guard_id", flat=True)
+
+    scheduled_shifts = Shift.objects.filter(
+        guard_id__in=deployed_guard_ids,
+        start_time=shift_date,
+    )
+
+    if exclude_guard_ids:
+        scheduled_shifts = scheduled_shifts.exclude(guard_id__in=exclude_guard_ids)
+
+    return scheduled_shifts.values("guard_id").distinct().count()
+
+
+@login_required
 def program_guard(request):
+    today = timezone.localdate()
+    selected_year = clean_schedule_period_value(request.POST.get("schedule_year"), today.year)
+    selected_month = clean_schedule_period_value(request.POST.get("schedule_month"), today.month)
+    if selected_month < 1 or selected_month > 12:
+        selected_month = today.month
+
     if request.method == "POST":
         form = ProgramGuardForm(request.POST)
 
         if form.is_valid():
-            deployment = form.save(commit=False)
-            deployment.status = "Active"
-            deployment.save()
-            messages.success(
-                request,
-                f"{deployment.guard.full_name} has been programmed on {deployment.site_location}."
-            )
-            return redirect("deployment_list")
-    else:
-        form = ProgramGuardForm()
+            additional_guards = list(form.cleaned_data["additional_guards"])
+            reliever_guard = form.cleaned_data["reliever_guard"]
+            required_guards = form.cleaned_data["required_guards"]
+            regular_guards = [form.cleaned_data["guard"], *additional_guards][:required_guards]
+            valid_schedule = []
+            invalid_codes = []
+            last_day = monthrange(selected_year, selected_month)[1]
 
-    return render(request, "guardmanagementsystem/form.html", {
+            for day_number in range(1, last_day + 1):
+                raw_code = request.POST.get(f"day_{day_number}", "")
+                shift_type, invalid_code = normalize_schedule_day_code(raw_code)
+
+                if invalid_code:
+                    invalid_codes.append(f"{invalid_code} on day {day_number}")
+                    continue
+
+                if shift_type:
+                    shift_date = date(selected_year, selected_month, day_number)
+                    valid_schedule.append((shift_date, shift_type))
+
+            if invalid_codes:
+                messages.error(request, f"Unsupported schedule code(s): {', '.join(invalid_codes)}. Use D, N, D/N, PH, O, or R.")
+            elif not valid_schedule:
+                messages.error(request, "Enter at least one scheduled duty day using D, N, D/N, or PH.")
+            else:
+                with transaction.atomic():
+                    deployment = form.save(commit=False)
+                    deployment.status = "Active"
+                    deployment.save()
+                    deployment_by_guard = {deployment.guard_id: deployment}
+
+                    for guard in [*regular_guards, reliever_guard]:
+                        guard_deployment, _ = Deployment.objects.get_or_create(
+                            guard=guard,
+                            client=deployment.client,
+                            site_location=deployment.site_location,
+                            start_date=deployment.start_date,
+                            end_date=deployment.end_date,
+                            defaults={"status": "Active"},
+                        )
+                        if guard_deployment.status != "Active":
+                            guard_deployment.status = "Active"
+                            guard_deployment.save(update_fields=["status"])
+                        deployment_by_guard[guard.guard_id] = guard_deployment
+
+                    created_shifts = 0
+                    updated_shifts = 0
+                    created_attendances = 0
+                    skipped_outside_deployment = 0
+                    skipped_capacity = 0
+                    reliever_days = 0
+                    duty_day_count = 0
+                    scheduled_guard_names = set()
+
+                    for shift_date, shift_type in valid_schedule:
+                        if shift_date < deployment.start_date:
+                            skipped_outside_deployment += 1
+                            continue
+
+                        if deployment.end_date and shift_date > deployment.end_date:
+                            skipped_outside_deployment += 1
+                            continue
+
+                        duty_day_count += 1
+                        existing_count = scheduled_guard_count_for_site(
+                            deployment.client,
+                            deployment.site_location,
+                            shift_date,
+                            exclude_guard_ids=[guard.guard_id for guard in [*regular_guards, reliever_guard]],
+                        )
+
+                        scheduled_today = []
+                        for guard_index, regular_guard in enumerate(regular_guards):
+                            if existing_count + len(scheduled_today) >= required_guards:
+                                skipped_capacity += 1
+                                continue
+
+                            is_rest_day = (duty_day_count + guard_index) % 7 == 0
+                            scheduled_guard = reliever_guard if is_rest_day else regular_guard
+
+                            if scheduled_guard in scheduled_today:
+                                continue
+
+                            if scheduled_guard == reliever_guard:
+                                reliever_days += 1
+
+                            _, shift_created = Shift.objects.update_or_create(
+                                guard=scheduled_guard,
+                                start_time=shift_date,
+                                defaults={
+                                    "shift_name": f"Scheduled Duty ({shift_type})",
+                                    "end_time": shift_date,
+                                    "shift_type": shift_type,
+                                },
+                            )
+
+                            if shift_created:
+                                created_shifts += 1
+                            else:
+                                updated_shifts += 1
+
+                            _, attendance_created = Attendance.objects.get_or_create(
+                                guard=scheduled_guard,
+                                attendance_date=shift_date,
+                                defaults={"status": "Present"},
+                            )
+
+                            if attendance_created:
+                                created_attendances += 1
+
+                            scheduled_today.append(scheduled_guard)
+                            scheduled_guard_names.add(scheduled_guard.full_name)
+
+                log_action(request, "CREATE", f"Created scheduled deployment {deployment}.")
+                messages.success(
+                    request,
+                    f"Scheduled {len(scheduled_guard_names)} guard(s) on {deployment.site_location}. "
+                    f"Created {created_shifts} shift(s), updated {updated_shifts} shift(s), "
+                    f"prepared {created_attendances} attendance record(s), "
+                    f"and assigned {reliever_days} reliever day(s) to {reliever_guard.full_name}."
+                )
+                if skipped_outside_deployment:
+                    messages.warning(request, f"Skipped {skipped_outside_deployment} day(s) outside the deployment date range.")
+                if skipped_capacity:
+                    messages.warning(request, f"Skipped {skipped_capacity} day(s) because the schedule would exceed {required_guards} required guard(s) for that site.")
+                return redirect("deployment_list")
+    else:
+        form = ProgramGuardForm(initial={
+            "start_date": date(today.year, today.month, 1),
+            "end_date": date(today.year, today.month, monthrange(today.year, today.month)[1]),
+        })
+
+    return render(request, "guardmanagementsystem/scheduled_guard_form.html", {
         "form": form,
-        "title": "Program Guard on Site"
+        "title": "Scheduled Guard on Site",
+        "current_month": selected_month,
+        "current_year": selected_year,
+        "month_choices": [(number, date(2000, number, 1).strftime("%B")) for number in range(1, 13)],
+        "schedule_days": build_schedule_days(selected_year, selected_month, request.POST if request.method == "POST" else None),
     })
 
 
+@login_required
 def deployment_edit(request, id):
-    deployment = get_object_or_404(Deployment, deployment_id=id)
-
-    if request.method == "POST":
-        form = DeploymentForm(request.POST, instance=deployment)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Deployment updated successfully.")
-            return redirect("deployment_list")
-    else:
-        form = DeploymentForm(instance=deployment)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Deployment"
-    })
+    return edit_record(request, Deployment, DeploymentForm, {"deployment_id": id}, "Edit Deployment", "deployment_list", "Deployment updated successfully.")
 
 
+@login_required
 def deployment_delete(request, id):
-    deployment = get_object_or_404(Deployment, deployment_id=id)
+    return delete_record(request, Deployment, {"deployment_id": id}, "Delete Deployment", "deployment_list", "Deployment deleted successfully.")
 
-    if request.method == "POST":
-        deployment.delete()
-        messages.success(request, "Deployment deleted successfully.")
-        return redirect("deployment_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": deployment,
-        "title": "Delete Deployment"
-    })
+@login_required
 def asset_list(request):
     assets = Asset.objects.select_related("guard").all()
+    asset_status_counts = dict(
+        assets.values("status").annotate(total=Count("asset_id")).values_list("status", "total")
+    )
+    total_assets = assets.count()
+    issued_assets = asset_status_counts.get("Assigned", 0)
+    available_assets = asset_status_counts.get("Available", 0)
+    damaged_assets = asset_status_counts.get("Damaged", 0)
+    lost_assets = asset_status_counts.get("Lost", 0)
+    returned_assets = asset_status_counts.get("Returned", 0)
+    refill_required = damaged_assets + lost_assets
+
     return render(request, "guardmanagementsystem/asset_list.html", {
-        "assets": assets
+        "assets": assets,
+        "total_assets": total_assets,
+        "issued_assets": issued_assets,
+        "available_assets": available_assets,
+        "damaged_assets": damaged_assets,
+        "lost_assets": lost_assets,
+        "returned_assets": returned_assets,
+        "refill_required": refill_required,
     })
 
 
+@login_required
 def asset_add(request):
-    if request.method == "POST":
-        form = AssetForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Asset added successfully.")
-            return redirect("asset_list")
-    else:
-        form = AssetForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Asset"
-    })
+    return add_record(request, AssetForm, "Add Asset", "asset_list", "Asset added successfully.")
 
 
+@login_required
 def asset_edit(request, id):
-    asset = get_object_or_404(Asset, asset_id=id)
-
-    if request.method == "POST":
-        form = AssetForm(request.POST, instance=asset)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Asset updated successfully.")
-            return redirect("asset_list")
-    else:
-        form = AssetForm(instance=asset)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Asset"
-    })
+    return edit_record(request, Asset, AssetForm, {"asset_id": id}, "Edit Asset", "asset_list", "Asset updated successfully.")
 
 
+@login_required
 def asset_delete(request, id):
-    asset = get_object_or_404(Asset, asset_id=id)
+    return delete_record(request, Asset, {"asset_id": id}, "Delete Asset", "asset_list", "Asset deleted successfully.")
+
+
+@login_required
+def iot_device_list(request):
+    devices = IoTDevice.objects.all().order_by("site_location", "device_name")
+    return show_records(request, devices, "guardmanagementsystem/iot_device_list.html", "devices")
+
+
+@login_required
+def iot_device_add(request):
+    return add_record(request, IoTDeviceForm, "Add IoT Device", "iot_device_list", "IoT device added successfully.")
+
+
+@login_required
+def iot_device_edit(request, id):
+    return edit_record(request, IoTDevice, IoTDeviceForm, {"device_id": id}, "Edit IoT Device", "iot_device_list", "IoT device updated successfully.")
+
+
+@login_required
+def iot_device_delete(request, id):
+    return delete_record(request, IoTDevice, {"device_id": id}, "Delete IoT Device", "iot_device_list", "IoT device deleted successfully.")
+
+
+@login_required
+def iot_swipe_attendance(request):
+    devices = IoTDevice.objects.filter(is_active=True).order_by("site_location", "device_name")
+    recent_attendances = Attendance.objects.select_related("guard").order_by("-attendance_date", "-attendance_id")[:10]
 
     if request.method == "POST":
-        asset.delete()
-        messages.success(request, "Asset deleted successfully.")
-        return redirect("asset_list")
+        device = IoTDevice.objects.filter(device_id=request.POST.get("device")).first()
+        card_id = request.POST.get("card_id")
+        action = request.POST.get("action", "check_in")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": asset,
-        "title": "Delete Asset"
+        if not device:
+            messages.error(request, "Select an active IoT device.")
+        else:
+            success, message, _ = record_iot_attendance(card_id, device.site_location, action)
+            if success:
+                messages.success(request, message)
+            else:
+                messages.error(request, message)
+
+        return redirect("iot_swipe_attendance")
+
+    return render(request, "guardmanagementsystem/iot_swipe_attendance.html", {
+        "devices": devices,
+        "recent_attendances": recent_attendances,
     })
 
+
+@csrf_exempt
+def iot_attendance_api(request):
+    if request.method != "POST":
+        return JsonResponse({
+            "success": False,
+            "message": "Use POST to send RFID attendance."
+        }, status=405)
+
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return JsonResponse({
+                "success": False,
+                "message": "Invalid JSON payload."
+            }, status=400)
+    else:
+        payload = request.POST
+
+    device_code = str(payload.get("device_code", "")).strip()
+    api_key = str(payload.get("api_key", "")).strip()
+    card_id = payload.get("card_id") or payload.get("rfid_card_number")
+    action = payload.get("action", "check_in")
+
+    device = IoTDevice.objects.filter(
+        device_code=device_code,
+        api_key=api_key,
+        is_active=True,
+    ).first()
+
+    if not device:
+        return JsonResponse({
+            "success": False,
+            "message": "Invalid or inactive IoT device."
+        }, status=403)
+
+    success, message, attendance = record_iot_attendance(card_id, device.site_location, action)
+    data = {
+        "success": success,
+        "message": message,
+        "device": device.device_code,
+        "site_location": device.site_location,
+    }
+
+    if attendance:
+        data.update({
+            "guard": attendance.guard.full_name,
+            "attendance_date": attendance.attendance_date.isoformat(),
+            "status": attendance.status,
+            "check_in_time": attendance.check_in_time.isoformat() if attendance.check_in_time else None,
+            "check_out_time": attendance.check_out_time.isoformat() if attendance.check_out_time else None,
+        })
+
+    return JsonResponse(data, status=200 if success else 400)
+
+
+# -------------------------------------------------------------------
+# ATTENDANCE AND SHIFT FUNCTION-BASED VIEWS
+# -------------------------------------------------------------------
+@login_required
 def attendance_list(request):
     attendances = Attendance.objects.select_related("guard").all()
     guards = Guard.objects.all()
@@ -1082,7 +2047,7 @@ def attendance_list(request):
                     return redirect(request.POST.get("next") or "attendance_list")
 
                 if replacement_guard and not has_active_deployment(replacement_guard, attendance.attendance_date):
-                    messages.error(request, "Replacement guard is not actively programmed on any client site for this date.")
+                    messages.error(request, "Replacement guard is not actively scheduled on any client site for this date.")
                     return redirect(request.POST.get("next") or "attendance_list")
 
                 if replacement_guard and not replacement_guard_is_available(replacement_guard, attendance):
@@ -1174,23 +2139,12 @@ def attendance_list(request):
     })
 
 
+@login_required
 def attendance_add(request):
-    if request.method == "POST":
-        form = AttendanceForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Attendance added successfully.")
-            return redirect("attendance_list")
-    else:
-        form = AttendanceForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Attendance"
-    })
+    return add_record(request, AttendanceForm, "Add Attendance", "attendance_list", "Attendance added successfully.")
 
 
+@login_required
 def attendance_edit(request, id):
     attendance = get_object_or_404(Attendance, attendance_id=id)
 
@@ -1214,18 +2168,12 @@ def attendance_edit(request, id):
     })
 
 
+@login_required
 def attendance_delete(request, id):
-    attendance = get_object_or_404(Attendance, attendance_id=id)
+    return delete_record(request, Attendance, {"attendance_id": id}, "Delete Attendance", "attendance_list", "Attendance deleted successfully.")
 
-    if request.method == "POST":
-        attendance.delete()
-        messages.success(request, "Attendance deleted successfully.")
-        return redirect("attendance_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": attendance,
-        "title": "Delete Attendance"
-    })
+@login_required
 def shift_list(request):
     shifts = list(Shift.objects.select_related("guard").all())
 
@@ -1237,55 +2185,22 @@ def shift_list(request):
     })
 
 
+@login_required
 def shift_add(request):
-    if request.method == "POST":
-        form = ShiftForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Shift added successfully.")
-            return redirect("shift_list")
-    else:
-        form = ShiftForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Shift"
-    })
+    return add_record(request, ShiftForm, "Add Shift", "shift_list", "Shift added successfully.")
 
 
+@login_required
 def shift_edit(request, id):
-    shift = get_object_or_404(Shift, shift_id=id)
-
-    if request.method == "POST":
-        form = ShiftForm(request.POST, instance=shift)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Shift updated successfully.")
-            return redirect("shift_list")
-    else:
-        form = ShiftForm(instance=shift)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Shift"
-    })
+    return edit_record(request, Shift, ShiftForm, {"shift_id": id}, "Edit Shift", "shift_list", "Shift updated successfully.")
 
 
+@login_required
 def shift_delete(request, id):
-    shift = get_object_or_404(Shift, shift_id=id)
+    return delete_record(request, Shift, {"shift_id": id}, "Delete Shift", "shift_list", "Shift deleted successfully.")
 
-    if request.method == "POST":
-        shift.delete()
-        messages.success(request, "Shift deleted successfully.")
-        return redirect("shift_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": shift,
-        "title": "Delete Shift"
-    })
-
+@login_required
 def salary_list(request):
     salaries = Salary.objects.select_related("guard", "supervisor").all()
     return render(request, "guardmanagementsystem/salary_list.html", {
@@ -1293,6 +2208,153 @@ def salary_list(request):
     })
 
 
+# -------------------------------------------------------------------
+# PAYROLL AND PAYSLIP HELPER FUNCTIONS
+# -------------------------------------------------------------------
+def calculate_uganda_paye(monthly_income):
+    monthly_income = money(monthly_income)
+
+    if monthly_income <= Decimal("235000"):
+        return money(0)
+
+    if monthly_income <= Decimal("335000"):
+        return money((monthly_income - Decimal("235000")) * Decimal("0.10"))
+
+    if monthly_income <= Decimal("410000"):
+        return money(Decimal("10000") + ((monthly_income - Decimal("335000")) * Decimal("0.20")))
+
+    paye = Decimal("25000") + ((monthly_income - Decimal("410000")) * Decimal("0.30"))
+    if monthly_income > Decimal("10000000"):
+        paye += (monthly_income - Decimal("10000000")) * Decimal("0.10")
+
+    return money(paye)
+
+
+def calculate_local_service_tax_annual(monthly_income):
+    monthly_income = money(monthly_income)
+
+    if monthly_income <= Decimal("100000"):
+        return money(0)
+    if monthly_income <= Decimal("200000"):
+        return money(5000)
+    if monthly_income <= Decimal("300000"):
+        return money(10000)
+    if monthly_income <= Decimal("400000"):
+        return money(20000)
+    if monthly_income <= Decimal("500000"):
+        return money(30000)
+    if monthly_income <= Decimal("600000"):
+        return money(40000)
+    if monthly_income <= Decimal("700000"):
+        return money(60000)
+    if monthly_income <= Decimal("800000"):
+        return money(70000)
+    if monthly_income <= Decimal("900000"):
+        return money(80000)
+    if monthly_income <= Decimal("1000000"):
+        return money(90000)
+    return money(100000)
+
+
+def get_salary_advance_deduction(salary):
+    if salary.employee_type != "Guard" or not salary.guard:
+        return money(0)
+
+    month_number = MONTH_NUMBERS.get(salary.month)
+    if not month_number:
+        return money(0)
+
+    total = AdvanceRequest.objects.filter(
+        guard=salary.guard,
+        status__in=["Approved", "Paid"],
+        request_date__year=salary.year,
+        request_date__month=month_number,
+    ).aggregate(total=Sum("amount"))["total"]
+
+    return money(total)
+
+
+def build_salary_payroll_context(salary):
+    gross_pay = money(salary.basic_pay) + money(salary.allowances)
+    paye = calculate_uganda_paye(gross_pay)
+    nssf_employee = money(gross_pay * Decimal("0.05"))
+    nssf_employer = money(gross_pay * Decimal("0.10"))
+    lst_annual = calculate_local_service_tax_annual(gross_pay)
+    month_number = MONTH_NUMBERS.get(salary.month, 0)
+    lst_deduction = money(lst_annual / Decimal("4")) if month_number in [7, 8, 9, 10] else money(0)
+    advance_total = get_salary_advance_deduction(salary)
+    manual_deductions = money(salary.deductions)
+    statutory_deductions = paye + nssf_employee + lst_deduction
+    available_for_advance = max(gross_pay - statutory_deductions - manual_deductions, money(0))
+    advance_deduction = money(min(advance_total, available_for_advance))
+    advance_balance = money(advance_total - advance_deduction)
+    total_deductions = statutory_deductions + manual_deductions + advance_deduction
+    net_payable = gross_pay - total_deductions
+
+    return {
+        "gross_pay": money(gross_pay),
+        "paye": paye,
+        "nssf_employee": nssf_employee,
+        "nssf_employer": nssf_employer,
+        "lst_annual": lst_annual,
+        "lst_deduction": lst_deduction,
+        "advance_total": advance_total,
+        "advance_deduction": advance_deduction,
+        "advance_balance": advance_balance,
+        "manual_deductions": manual_deductions,
+        "statutory_deductions": money(statutory_deductions),
+        "total_deductions": money(total_deductions),
+        "net_payable": money(net_payable),
+    }
+
+
+# -------------------------------------------------------------------
+# SALARY, INCIDENT, DISCIPLINARY, AND ADVANCE FUNCTION-BASED VIEWS
+# -------------------------------------------------------------------
+@login_required
+def salary_payslip_individual(request, id):
+    salary = get_object_or_404(
+        Salary.objects.select_related("guard", "supervisor"),
+        salary_id=id
+    )
+    return render(request, "guardmanagementsystem/payslip.html", {
+        "salary": salary,
+        "payroll": build_salary_payroll_context(salary),
+        "title": "Individual Payslip",
+    })
+
+
+@login_required
+def salary_payslip_general(request):
+    salaries = Salary.objects.select_related("guard", "supervisor").all()
+    payroll_rows = [
+        {
+            "salary": salary,
+            "payroll": build_salary_payroll_context(salary),
+        }
+        for salary in salaries
+    ]
+    totals = {
+        "basic_pay": money(sum(row["salary"].basic_pay for row in payroll_rows)),
+        "allowances": money(sum(row["salary"].allowances for row in payroll_rows)),
+        "paye": money(sum(row["payroll"]["paye"] for row in payroll_rows)),
+        "nssf_employee": money(sum(row["payroll"]["nssf_employee"] for row in payroll_rows)),
+        "lst_deduction": money(sum(row["payroll"]["lst_deduction"] for row in payroll_rows)),
+        "advance_deduction": money(sum(row["payroll"]["advance_deduction"] for row in payroll_rows)),
+        "manual_deductions": money(sum(row["payroll"]["manual_deductions"] for row in payroll_rows)),
+        "total_deductions": money(sum(row["payroll"]["total_deductions"] for row in payroll_rows)),
+        "net_payable": money(sum(row["payroll"]["net_payable"] for row in payroll_rows)),
+    }
+    totals["gross_pay"] = money(totals["basic_pay"] + totals["allowances"])
+    return render(request, "guardmanagementsystem/payslip_general.html", {
+        "salaries": salaries,
+        "payroll_rows": payroll_rows,
+        "totals": totals,
+        "title": "General Payslip",
+    })
+
+
+@login_required
 def salary_add(request):
     if request.method == "POST":
         form = SalaryForm(request.POST)
@@ -1325,38 +2387,17 @@ def salary_add(request):
     })
 
 
+@login_required
 def salary_edit(request, id):
-    salary = get_object_or_404(Salary, salary_id=id)
-
-    if request.method == "POST":
-        form = SalaryForm(request.POST, instance=salary)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Salary updated successfully.")
-            return redirect("salary_list")
-    else:
-        form = SalaryForm(instance=salary)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Salary"
-    })
+    return edit_record(request, Salary, SalaryForm, {"salary_id": id}, "Edit Salary", "salary_list", "Salary updated successfully.")
 
 
+@login_required
 def salary_delete(request, id):
-    salary = get_object_or_404(Salary, salary_id=id)
+    return delete_record(request, Salary, {"salary_id": id}, "Delete Salary", "salary_list", "Salary deleted successfully.")
 
-    if request.method == "POST":
-        salary.delete()
-        messages.success(request, "Salary deleted successfully.")
-        return redirect("salary_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": salary,
-        "title": "Delete Salary"
-    })
-
+@login_required
 def incident_list(request):
     incidents = Incident.objects.select_related("guard", "reported_by").all()
     return render(request, "guardmanagementsystem/incident_list.html", {
@@ -1364,6 +2405,76 @@ def incident_list(request):
     })
 
 
+@login_required
+def incident_pdf_report(request, id):
+    incident = get_object_or_404(
+        Incident.objects.select_related("guard", "reported_by"),
+        incident_id=id
+    )
+    incident_time = incident.incident_time.strftime("%I:%M %p") if incident.incident_time else "-"
+    supervisor = incident.reported_by
+    generated_at = timezone.localtime().strftime("%Y-%m-%d %I:%M %p")
+    pdf_bytes = build_simple_pdf(
+        f"Standard Incident Report - IR-{incident.incident_id}",
+        [
+            ("Document Control", [
+                ("Report Reference", f"IR-{incident.incident_id}"),
+                ("Document Type", "Standard Security Incident Report"),
+                ("Generated On", generated_at),
+                ("Confidentiality", "Internal use only"),
+                ("Current Status", incident.status),
+            ]),
+            ("Incident Classification", [
+                ("Incident Category", incident.incident_type),
+                ("Severity / Priority", "To be assessed by supervisor"),
+                ("Site / Location", incident.location),
+                ("Incident Date", incident.incident_date),
+                ("Incident Time", incident_time),
+            ]),
+            ("Reporting Guard / Officer", [
+                ("Name", incident.guard.full_name),
+                ("Employee Number", incident.guard.employee_number or "-"),
+                ("Phone", incident.guard.phone),
+                ("Email", incident.guard.email),
+                ("Employment Status", incident.guard.status),
+            ]),
+            ("Reported By / Issuing Officer", [
+                ("Name", incident.reporter_name),
+                ("Supervisor", supervisor.full_name if supervisor else "-"),
+                ("Supervisor Phone", supervisor.phone if supervisor else "-"),
+                ("Supervisor Email", supervisor.email if supervisor else "-"),
+            ]),
+            ("Person(s) Involved", [
+                ("Primary Person Involved", incident.involved_full_name),
+                ("Witnesses", "Not recorded"),
+                ("Injuries / Damage", "Not recorded"),
+            ]),
+            ("Incident Narrative", [
+                ("Summary of Facts", incident.description),
+                ("Further Comments", incident.further_comments or "-"),
+            ]),
+            ("Immediate Action Taken", [
+                ("Action Taken at Scene", "Not recorded"),
+                ("Notification Made To", supervisor.full_name if supervisor else "-"),
+                ("Police / External Reference", "Not recorded"),
+            ]),
+            ("Evidence and Attachments", [
+                ("Photos / CCTV / Documents", "Not recorded"),
+                ("Assets Affected", "Not recorded"),
+            ]),
+            ("Follow Up and Closure", [
+                ("Corrective Action Required", "To be completed by supervisor"),
+                ("Responsible Person", supervisor.full_name if supervisor else "-"),
+                ("Closure Notes", "To be completed after review"),
+            ]),
+        ]
+    )
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="incident_report_IR-{incident.incident_id}.pdf"'
+    return response
+
+
+@login_required
 def incident_add(request):
     if request.method == "POST":
         form = IncidentForm(request.POST)
@@ -1392,163 +2503,98 @@ def incident_add(request):
     })
 
 
+@login_required
 def incident_edit(request, id):
-    incident = get_object_or_404(Incident, incident_id=id)
-
-    if request.method == "POST":
-        form = IncidentForm(request.POST, instance=incident)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Incident updated successfully.")
-            return redirect("incident_list")
-    else:
-        form = IncidentForm(instance=incident)
-
-    return render(request, "guardmanagementsystem/incident_form.html", {
-        "form": form,
-        "title": "Edit Incident Report",
-        "button_text": "Report Now!"
-    })
+    return edit_record(
+        request,
+        Incident,
+        IncidentForm,
+        {"incident_id": id},
+        "Edit Incident Report",
+        "incident_list",
+        "Incident updated successfully.",
+        template_name="guardmanagementsystem/incident_form.html",
+        extra_context={"button_text": "Report Now!"}
+    )
 
 
+@login_required
 def incident_delete(request, id):
-    incident = get_object_or_404(Incident, incident_id=id)
+    return delete_record(request, Incident, {"incident_id": id}, "Delete Incident", "incident_list", "Incident deleted successfully.")
 
-    if request.method == "POST":
-        incident.delete()
-        messages.success(request, "Incident deleted successfully.")
-        return redirect("incident_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": incident,
-        "title": "Delete Incident"
-    })
-
+@login_required
 def disciplinary_action_list(request):
     disciplinary_actions = DisciplinaryAction.objects.select_related(
         "guard", "issued_by"
     ).all()
+    return show_records(
+        request,
+        disciplinary_actions,
+        "guardmanagementsystem/disciplinary_action_list.html",
+        "disciplinary_actions"
+    )
 
-    return render(request, "guardmanagementsystem/disciplinary_action_list.html", {
-        "disciplinary_actions": disciplinary_actions
-    })
 
-
+@login_required
 def disciplinary_action_add(request):
-    if request.method == "POST":
-        form = DisciplinaryActionForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Disciplinary action added successfully.")
-            return redirect("disciplinary_action_list")
-    else:
-        form = DisciplinaryActionForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Disciplinary Action"
-    })
+    return add_record(
+        request,
+        DisciplinaryActionForm,
+        "Add Disciplinary Action",
+        "disciplinary_action_list",
+        "Disciplinary action added successfully."
+    )
 
 
+@login_required
 def disciplinary_action_edit(request, id):
-    disciplinary_action = get_object_or_404(
+    return edit_record(
+        request,
         DisciplinaryAction,
-        disciplinary_id=id
+        DisciplinaryActionForm,
+        {"disciplinary_id": id},
+        "Edit Disciplinary Action",
+        "disciplinary_action_list",
+        "Disciplinary action updated successfully."
     )
 
-    if request.method == "POST":
-        form = DisciplinaryActionForm(
-            request.POST,
-            instance=disciplinary_action
-        )
 
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Disciplinary action updated successfully.")
-            return redirect("disciplinary_action_list")
-    else:
-        form = DisciplinaryActionForm(instance=disciplinary_action)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Disciplinary Action"
-    })
-
-
+@login_required
 def disciplinary_action_delete(request, id):
-    disciplinary_action = get_object_or_404(
+    return delete_record(
+        request,
         DisciplinaryAction,
-        disciplinary_id=id
+        {"disciplinary_id": id},
+        "Delete Disciplinary Action",
+        "disciplinary_action_list",
+        "Disciplinary action deleted successfully."
     )
 
-    if request.method == "POST":
-        disciplinary_action.delete()
-        messages.success(request, "Disciplinary action deleted successfully.")
-        return redirect("disciplinary_action_list")
 
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": disciplinary_action,
-        "title": "Delete Disciplinary Action"
-    })
-
-
+@login_required
 def advance_request_list(request):
     advance_requests = AdvanceRequest.objects.select_related(
         "guard", "approved_by"
     ).all()
+    return show_records(
+        request,
+        advance_requests,
+        "guardmanagementsystem/advance_request_list.html",
+        "advance_requests"
+    )
 
-    return render(request, "guardmanagementsystem/advance_request_list.html", {
-        "advance_requests": advance_requests
-    })
 
-
+@login_required
 def advance_request_add(request):
-    if request.method == "POST":
-        form = AdvanceRequestForm(request.POST)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Advance request added successfully.")
-            return redirect("advance_request_list")
-    else:
-        form = AdvanceRequestForm()
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Add Advance Request"
-    })
+    return add_record(request, AdvanceRequestForm, "Add Advance Request", "advance_request_list", "Advance request added successfully.")
 
 
+@login_required
 def advance_request_edit(request, id):
-    advance_request = get_object_or_404(AdvanceRequest, advance_id=id)
-
-    if request.method == "POST":
-        form = AdvanceRequestForm(request.POST, instance=advance_request)
-
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Advance request updated successfully.")
-            return redirect("advance_request_list")
-    else:
-        form = AdvanceRequestForm(instance=advance_request)
-
-    return render(request, "guardmanagementsystem/form.html", {
-        "form": form,
-        "title": "Edit Advance Request"
-    })
+    return edit_record(request, AdvanceRequest, AdvanceRequestForm, {"advance_id": id}, "Edit Advance Request", "advance_request_list", "Advance request updated successfully.")
 
 
+@login_required
 def advance_request_delete(request, id):
-    advance_request = get_object_or_404(AdvanceRequest, advance_id=id)
-
-    if request.method == "POST":
-        advance_request.delete()
-        messages.success(request, "Advance request deleted successfully.")
-        return redirect("advance_request_list")
-
-    return render(request, "guardmanagementsystem/delete.html", {
-        "object": advance_request,
-        "title": "Delete Advance Request"
-    })
+    return delete_record(request, AdvanceRequest, {"advance_id": id}, "Delete Advance Request", "advance_request_list", "Advance request deleted successfully.")

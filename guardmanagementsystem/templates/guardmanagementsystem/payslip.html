@@ -1,0 +1,382 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<style>
+    .payslip-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .payslip-document {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: #1e2a36;
+        font-size: 0.76rem;
+        margin: 0 auto;
+        max-width: 780px;
+        padding: 16px 18px;
+    }
+
+    .payslip-masthead {
+        align-items: flex-start;
+        border-bottom: 3px solid var(--brand);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 9px;
+    }
+
+    .company-name {
+        font-size: 1.04rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        margin: 0;
+        text-transform: uppercase;
+    }
+
+    .document-title {
+        background: #eef8f5;
+        border: 1px solid #caece4;
+        border-radius: 6px;
+        color: var(--brand-dark);
+        font-size: 0.82rem;
+        font-weight: 800;
+        padding: 6px 10px;
+        text-align: center;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .payslip-meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+        margin: 10px 0;
+    }
+
+    .meta-box {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+    }
+
+    .label {
+        color: var(--muted);
+        display: block;
+        font-size: 0.64rem;
+        font-weight: 800;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+    }
+
+    .value {
+        font-weight: 700;
+        word-break: break-word;
+    }
+
+    .section-title {
+        background: #f6f8fb;
+        border: 1px solid var(--line);
+        border-radius: 6px 6px 0 0;
+        font-size: 0.7rem;
+        font-weight: 800;
+        margin: 0;
+        padding: 5px 8px;
+        text-transform: uppercase;
+    }
+
+    .pay-tables {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 9px;
+    }
+
+    .pay-table {
+        border: 1px solid var(--line);
+        border-top: 0;
+        margin: 0;
+    }
+
+    .pay-table th,
+    .pay-table td {
+        padding: 4px 7px;
+    }
+
+    .payslip-document .table {
+        font-size: 0.72rem;
+        line-height: 1.14;
+    }
+
+    .payslip-document .table th,
+    .payslip-document .table td {
+        min-width: auto;
+        padding: 4px 7px;
+    }
+
+    .payslip-document .table-responsive {
+        margin-bottom: 8px !important;
+    }
+
+    .amount {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .net-pay-panel {
+        align-items: center;
+        background: #eef8f5;
+        border: 1px solid #caece4;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        margin: 8px 0 8px;
+        padding: 8px 10px;
+    }
+
+    .net-pay-label {
+        color: var(--brand-dark);
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .net-pay-amount {
+        color: var(--brand-dark);
+        font-size: 1.15rem;
+        font-weight: 900;
+    }
+
+    .signature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .signature-line {
+        border-top: 1px solid #9aa8b5;
+        color: var(--muted);
+        font-size: 0.68rem;
+        padding-top: 5px;
+        text-align: center;
+    }
+
+    @media (max-width: 767.98px) {
+        .payslip-document {
+            padding: 14px;
+        }
+
+        .payslip-masthead,
+        .net-pay-panel {
+            display: block;
+        }
+
+        .document-title {
+            margin-top: 14px;
+            white-space: normal;
+        }
+
+        .payslip-meta,
+        .pay-tables,
+        .signature-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media print {
+        .sidebar,
+        .topbar,
+        .page-header,
+        .payslip-actions {
+            display: none !important;
+        }
+
+        .app-layout,
+        .main-panel,
+        .content-area {
+            display: block;
+            min-height: auto;
+            padding: 0;
+        }
+
+        body {
+            background: #fff;
+        }
+
+        .payslip-document {
+            border: 0;
+            max-width: none;
+            padding: 0;
+        }
+    }
+</style>
+
+<div class="payslip-actions">
+    <a href="{% url 'salary_list' %}" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left me-1"></i> Back
+    </a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">
+        <i class="fa fa-print me-1"></i> Print Payslip
+    </button>
+</div>
+
+<div class="payslip-document">
+    <div class="payslip-masthead">
+        <div>
+            <p class="company-name">Guard Management System</p>
+            <div class="text-muted">Employee payroll statement</div>
+            <div class="text-muted">Confidential salary document</div>
+        </div>
+        <div class="document-title">Payslip</div>
+    </div>
+
+    <div class="payslip-meta">
+        <div class="meta-box">
+            <span class="label">Payslip No.</span>
+            <span class="value">PS-{{ salary.salary_id }}</span>
+        </div>
+        <div class="meta-box">
+            <span class="label">Pay Period</span>
+            <span class="value">{{ salary.month }} {{ salary.year }}</span>
+        </div>
+        <div class="meta-box">
+            <span class="label">Payment Date</span>
+            <span class="value">{{ salary.payment_date }}</span>
+        </div>
+        <div class="meta-box">
+            <span class="label">Employee Type</span>
+            <span class="value">{{ salary.employee_type }}</span>
+        </div>
+    </div>
+
+    <p class="section-title">Employee Details</p>
+    <div class="table-responsive mb-4">
+        <table class="table table-bordered mb-0">
+            <tbody>
+                <tr>
+                    <th>Employee Number</th>
+                    <td>{{ salary.employee_number }}</td>
+                    <th>Employee Name</th>
+                    <td>{{ salary.employee }}</td>
+                </tr>
+                <tr>
+                    <th>Phone</th>
+                    <td>{{ salary.employee.phone|default:"-" }}</td>
+                    <th>Email</th>
+                    <td>{{ salary.employee.email|default:"-" }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="pay-tables">
+        <div>
+            <p class="section-title">Earnings</p>
+            <table class="table pay-table">
+                <tbody>
+                    <tr>
+                        <td>Attendance Days</td>
+                        <td class="amount">{{ salary.attendance_days }}</td>
+                    </tr>
+                    <tr>
+                        <td>Daily Rate</td>
+                        <td class="amount">{{ salary.daily_rate }}</td>
+                    </tr>
+                    <tr>
+                        <td>Basic / Gross Pay</td>
+                        <td class="amount">{{ salary.basic_pay }}</td>
+                    </tr>
+                    <tr>
+                        <td>Allowances</td>
+                        <td class="amount">{{ salary.allowances }}</td>
+                    </tr>
+                    <tr class="table-light">
+                        <th>Total Earnings</th>
+                        <th class="amount">{{ payroll.gross_pay }}</th>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div>
+            <p class="section-title">Deductions</p>
+            <table class="table pay-table">
+                <tbody>
+                    <tr>
+                        <td>PAYE</td>
+                        <td class="amount">{{ payroll.paye }}</td>
+                    </tr>
+                    <tr>
+                        <td>NSSF Employee Contribution (5%)</td>
+                        <td class="amount">{{ payroll.nssf_employee }}</td>
+                    </tr>
+                    <tr>
+                        <td>Local Service Tax</td>
+                        <td class="amount">{{ payroll.lst_deduction }}</td>
+                    </tr>
+                    <tr>
+                        <td>Salary Advance Deduction</td>
+                        <td class="amount">{{ payroll.advance_deduction }}</td>
+                    </tr>
+                    <tr>
+                        <td>Other Deductions</td>
+                        <td class="amount">{{ payroll.manual_deductions }}</td>
+                    </tr>
+                    <tr class="table-light">
+                        <th>Total Deductions</th>
+                        <th class="amount">{{ payroll.total_deductions }}</th>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="section-title">Statutory and Advance Summary</p>
+    <div class="table-responsive mb-4">
+        <table class="table table-bordered mb-0">
+            <tbody>
+                <tr>
+                    <th>Statutory Deductions</th>
+                    <td class="amount">{{ payroll.statutory_deductions }}</td>
+                    <th>Employer NSSF Contribution (10%)</th>
+                    <td class="amount">{{ payroll.nssf_employer }}</td>
+                </tr>
+                <tr>
+                    <th>Salary Advance Total</th>
+                    <td class="amount">{{ payroll.advance_total }}</td>
+                    <th>Advance Balance</th>
+                    <td class="amount">{{ payroll.advance_balance }}</td>
+                </tr>
+                <tr>
+                    <th>Annual Local Service Tax</th>
+                    <td class="amount">{{ payroll.lst_annual }}</td>
+                    <th>Local Service Tax Deduction</th>
+                    <td class="amount">{{ payroll.lst_deduction }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="net-pay-panel">
+        <div>
+            <div class="net-pay-label">Net Payable Salary</div>
+            <div class="text-muted">Amount payable after statutory, advance, and other deductions</div>
+        </div>
+        <div class="net-pay-amount">{{ payroll.net_payable }}</div>
+    </div>
+
+    <p class="text-muted mb-0">
+        This payslip is system generated from salary and attendance records.
+    </p>
+
+    <div class="signature-grid">
+        <div class="signature-line">Prepared By</div>
+        <div class="signature-line">Approved By</div>
+        <div class="signature-line">Employee Signature</div>
+    </div>
+</div>
+{% endblock %}

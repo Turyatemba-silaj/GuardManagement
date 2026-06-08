@@ -1,6 +1,32 @@
 from django import forms
 from django.db import models
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 from .models import*
+
+
+class SignupForm(UserCreationForm):
+    email = forms.EmailField(required=True)
+    first_name = forms.CharField(max_length=150, required=False)
+    last_name = forms.CharField(max_length=150, required=False)
+
+    class Meta:
+        model = User
+        fields = ["username", "first_name", "last_name", "email", "password1", "password2"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.update({"class": "form-control"})
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.email = self.cleaned_data["email"]
+        user.first_name = self.cleaned_data.get("first_name", "")
+        user.last_name = self.cleaned_data.get("last_name", "")
+        if commit:
+            user.save()
+        return user
 
 
 class GuardForm(forms.ModelForm):
@@ -24,6 +50,10 @@ class GuardForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Enter phone number'
             }),
+            'rfid_card_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter RFID card number'
+            }),
             'email': forms.EmailInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter email address'
@@ -44,6 +74,34 @@ class GuardForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Enter daily rate',
                 'step': '0.01'
+            }),
+        }
+
+
+class IoTDeviceForm(forms.ModelForm):
+    class Meta:
+        model = IoTDevice
+        fields = '__all__'
+
+        widgets = {
+            'device_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Example: Main Gate RFID Reader'
+            }),
+            'device_code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Example: GATE-001'
+            }),
+            'site_location': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter installed site location'
+            }),
+            'api_key': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Simple secret key used by the device'
+            }),
+            'is_active': forms.Select(attrs={
+                'class': 'form-control'
             }),
         }
 
@@ -145,6 +203,61 @@ class DeploymentForm(forms.ModelForm):
 
 
 class ProgramGuardForm(forms.ModelForm):
+    additional_guards = forms.ModelMultipleChoiceField(
+        queryset=Guard.objects.filter(status="Active"),
+        required=False,
+        label="Additional Guards",
+        help_text="Select the other regular guards needed to meet the required site headcount.",
+        widget=forms.SelectMultiple(attrs={
+            'class': 'form-control',
+            'size': '6'
+        })
+    )
+    reliever_guard = forms.ModelChoiceField(
+        queryset=Guard.objects.filter(status="Active"),
+        required=True,
+        label="Reliever Guard",
+        help_text="This guard is scheduled on every seventh day while the main guard is off.",
+        widget=forms.Select(attrs={
+            'class': 'form-control'
+        })
+    )
+    required_guards = forms.IntegerField(
+        min_value=1,
+        initial=1,
+        label="Required Guards",
+        help_text="Maximum number of guards allowed on this client site per scheduled day.",
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'min': '1'
+        })
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        guard = cleaned_data.get("guard")
+        additional_guards = list(cleaned_data.get("additional_guards") or [])
+        reliever_guard = cleaned_data.get("reliever_guard")
+        required_guards = cleaned_data.get("required_guards")
+
+        if guard and reliever_guard and guard == reliever_guard:
+            raise forms.ValidationError("Reliever guard must be different from the main scheduled guard.")
+
+        if guard and guard in additional_guards:
+            raise forms.ValidationError("Main guard should not be repeated in additional guards.")
+
+        if reliever_guard and reliever_guard in additional_guards:
+            raise forms.ValidationError("Reliever guard should not be selected as an additional regular guard.")
+
+        if required_guards and guard:
+            regular_guard_count = 1 + len(additional_guards)
+            if regular_guard_count < required_guards:
+                raise forms.ValidationError(
+                    f"Select {required_guards - 1} additional regular guard(s) so the team meets the required guard count."
+                )
+
+        return cleaned_data
+
     class Meta:
         model = Deployment
         fields = ['guard', 'client', 'site_location', 'start_date', 'end_date']
@@ -228,7 +341,7 @@ class AttendanceForm(forms.ModelForm):
             ).exists()
 
             if not active_deployment:
-                raise forms.ValidationError("This guard is not actively programmed on any client site for this date.")
+                raise forms.ValidationError("This guard is not actively scheduled on any client site for this date.")
 
         if replacement_guard and guard and replacement_guard == guard:
             raise forms.ValidationError("Replacement guard cannot be the same as the scheduled guard.")
@@ -243,7 +356,7 @@ class AttendanceForm(forms.ModelForm):
             ).exists()
 
             if not replacement_active:
-                raise forms.ValidationError("Replacement guard is not actively programmed on any client site for this date.")
+                raise forms.ValidationError("Replacement guard is not actively scheduled on any client site for this date.")
 
         if status == "Absent" and not absence_reason and not replacement_guard:
             raise forms.ValidationError("Enter an absence reason or select a replacement guard.")
@@ -281,6 +394,10 @@ class ShiftForm(forms.ModelForm):
         guard = cleaned_data.get('guard')
         start_time = cleaned_data.get('start_time')
         end_time = cleaned_data.get('end_time')
+        shift_type = cleaned_data.get('shift_type')
+
+        if str(shift_type or "").strip().upper() in ["N/D", "ND"]:
+            raise forms.ValidationError("Use D/N for combined day and night duty. N/D pattern is not allowed.")
 
         if start_time and end_time and end_time < start_time:
             raise forms.ValidationError("Shift end date cannot be before the start date.")
@@ -302,7 +419,7 @@ class ShiftForm(forms.ModelForm):
             ).exists()
 
             if not active_deployment:
-                raise forms.ValidationError("This guard is not actively programmed on any client site for this shift date.")
+                raise forms.ValidationError("This guard is not actively scheduled on any client site for this shift date.")
 
         return cleaned_data
 
@@ -512,5 +629,37 @@ class DisciplinaryActionForm(forms.ModelForm):
             }),
             'issued_by': forms.Select(attrs={
                 'class': 'form-control'
+            }),
+        }
+
+
+class AdvanceRequestForm(forms.ModelForm):
+    class Meta:
+        model = AdvanceRequest
+        fields = '__all__'
+
+        widgets = {
+            'guard': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'placeholder': 'Enter advance amount'
+            }),
+            'reason': forms.Textarea(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter reason for salary advance',
+                'rows': 3
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'approved_by': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'approved_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
             }),
         }

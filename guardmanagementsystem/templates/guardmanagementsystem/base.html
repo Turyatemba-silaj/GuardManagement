@@ -8,31 +8,53 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --bg: #eef3f8;
-            --panel: #ffffff;
-            --ink: #1e2a36;
-            --muted: #6c7a89;
-            --line: #dfe7ef;
-            --sidebar: #182332;
-            --sidebar-soft: #223247;
             --brand: #1abb9c;
-            --brand-dark: #12987e;
-            --accent: #f39c12;
-            --danger: #e74c3c;
-            --blue: #247ba0;
-            --purple: #6c5ce7;
-        }
-
-        * {
-            letter-spacing: 0;
+            --brand-dark: #117e69;
+            --line: #d8e0e8;
+            --muted: #6c7a89;
+            --sidebar-bg: #1f2d3d;
+            --sidebar-bg-dark: #182433;
+            --sidebar-active: #1abb9c;
         }
 
         body {
+            background: whitesmoke;
+            color: #243447;
+            font-size: 0.9rem;
             min-height: 100vh;
-            margin: 0;
-            background: var(--bg);
-            color: var(--ink);
-            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        h1 {
+            font-size: 1.85rem;
+        }
+
+        h2 {
+            font-size: 1.45rem;
+        }
+
+        h3 {
+            font-size: 1.25rem;
+        }
+
+        h4 {
+            font-size: 1.1rem;
+        }
+
+        h5,
+        .h5 {
+            font-size: 1rem;
+        }
+
+        .btn,
+        .form-control,
+        .form-select,
+        .table,
+        .dropdown-menu {
+            font-size: 0.88rem;
+        }
+
+        .form-label {
+            font-size: 0.86rem;
         }
 
         .app-layout {
@@ -41,394 +63,310 @@
         }
 
         .sidebar {
-            position: sticky;
-            top: 0;
-            width: 272px;
-            height: 100vh;
-            flex: 0 0 272px;
-            background: var(--sidebar);
-            color: #fff;
+            background: var(--sidebar-bg);
+            color: #dce6ef;
             display: flex;
             flex-direction: column;
-            overflow-y: auto;
+            flex: 0 0 270px;
+            min-height: 100vh;
+            position: sticky;
+            top: 0;
         }
 
-        .brand-block {
-            padding: 24px 22px 18px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        .sidebar-brand {
+            align-items: center;
+            background: var(--sidebar-bg-dark);
+            color: #fff;
+            display: flex;
+            gap: 12px;
+            min-height: 70px;
+            padding: 18px 22px;
+            text-decoration: none;
+        }
+
+        .sidebar-brand:hover {
+            color: #fff;
         }
 
         .brand-mark {
-            width: 42px;
-            height: 42px;
+            align-items: center;
+            background: var(--sidebar-active);
             border-radius: 8px;
             display: inline-flex;
-            align-items: center;
+            height: 38px;
             justify-content: center;
-            background: var(--brand);
-            color: #fff;
-            margin-right: 10px;
+            width: 38px;
         }
 
         .brand-title {
-            font-size: 1rem;
-            font-weight: 700;
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 800;
             line-height: 1.15;
         }
 
         .brand-subtitle {
-            color: #aab6c3;
-            font-size: 0.78rem;
-        }
-
-        .sidebar-section {
-            padding: 18px 14px;
-        }
-
-        .sidebar-label {
-            color: #7f90a4;
-            font-size: 0.72rem;
-            font-weight: 700;
-            margin: 0 12px 8px;
-            text-transform: uppercase;
-        }
-
-        .sidebar-group {
-            margin-bottom: 10px;
-        }
-
-        .sidebar-group-toggle {
-            width: 100%;
-            min-height: 42px;
-            border: 0;
-            border-radius: 8px;
-            background: transparent;
-            color: #d8e2ec;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 10px 12px;
-            font-weight: 700;
-            text-align: left;
-            text-transform: uppercase;
+            color: #9fb0c2;
+            display: block;
             font-size: 0.76rem;
-            transition: background-color 0.15s ease, color 0.15s ease;
+            margin-top: 2px;
         }
 
-        .sidebar-group-toggle:hover,
-        .sidebar-group-toggle[aria-expanded="true"] {
-            background: rgba(255, 255, 255, 0.06);
+        .sidebar-nav {
+            overflow-y: auto;
+            padding: 16px 14px 22px;
+        }
+
+        .nav-section-label {
+            color: #8fa3b7;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            margin: 18px 10px 8px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-module {
+            margin-top: 8px;
+        }
+
+        .module-toggle {
+            align-items: center;
+            background: transparent;
+            border: 0;
+            border-radius: 6px;
+            color: #dce6ef;
+            display: flex;
+            font-weight: 700;
+            gap: 11px;
+            justify-content: space-between;
+            min-height: 42px;
+            padding: 9px 11px;
+            text-align: left;
+            width: 100%;
+            font-size: 0.88rem;
+        }
+
+        .module-toggle:hover,
+        .module-toggle[aria-expanded="true"] {
+            background: rgba(255, 255, 255, 0.1);
             color: #fff;
         }
 
-        .sidebar-group-title {
-            display: inline-flex;
+        .module-title {
             align-items: center;
-            gap: 10px;
+            display: inline-flex;
+            gap: 11px;
         }
 
-        .sidebar-group-toggle .fa-chevron-down {
+        .module-title i {
+            color: #9fb0c2;
+            text-align: center;
+            width: 18px;
+        }
+
+        .module-toggle[aria-expanded="true"] .module-title i {
+            color: var(--sidebar-active);
+        }
+
+        .module-chevron {
+            color: #9fb0c2;
             font-size: 0.72rem;
             transition: transform 0.15s ease;
         }
 
-        .sidebar-group-toggle[aria-expanded="true"] .fa-chevron-down {
+        .module-toggle[aria-expanded="true"] .module-chevron {
             transform: rotate(180deg);
         }
 
-        .sidebar-submenu {
-            padding: 6px 0 4px 12px;
+        .module-menu {
+            padding: 4px 0 8px 14px;
         }
 
         .sidebar-link {
-            min-height: 42px;
-            border-radius: 8px;
-            color: #d8e2ec;
-            display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
+            border-radius: 6px;
+            color: #dce6ef;
+            display: flex;
+            gap: 11px;
+            min-height: 40px;
+            padding: 9px 11px;
             text-decoration: none;
-            transition: background-color 0.15s ease, color 0.15s ease;
+            font-size: 0.86rem;
         }
 
         .sidebar-link i {
-            width: 20px;
+            color: #9fb0c2;
             text-align: center;
+            width: 18px;
         }
 
         .sidebar-link:hover,
         .sidebar-link.active {
-            background: var(--sidebar-soft);
+            background: rgba(255, 255, 255, 0.1);
             color: #fff;
         }
 
         .sidebar-link.active {
-            box-shadow: inset 3px 0 0 var(--brand);
+            border-left: 3px solid var(--sidebar-active);
+            font-weight: 700;
+            padding-left: 8px;
+        }
+
+        .sidebar-link.active i {
+            color: var(--sidebar-active);
         }
 
         .sidebar-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
             margin-top: auto;
-            padding: 16px 18px 22px;
-            color: #aab6c3;
-            font-size: 0.82rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 14px;
         }
 
-        .content-area {
+        .main-panel {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
             min-width: 0;
-            flex: 1;
         }
 
         .topbar {
-            min-height: 72px;
-            background: rgba(255, 255, 255, 0.92);
+            align-items: center;
+            background: #fff;
             border-bottom: 1px solid var(--line);
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            padding: 0 28px;
-            position: sticky;
-            top: 0;
-            z-index: 20;
+            min-height: 70px;
+            padding: 0 24px;
         }
 
-        .topbar h1 {
-            font-size: 1.15rem;
+        .topbar-title {
+            font-size: 0.95rem;
             font-weight: 800;
             margin: 0;
         }
 
-        .topbar .search-box {
-            max-width: 360px;
-            width: 100%;
-            position: relative;
-        }
-
-        .search-box i {
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
+        .topbar-user {
             color: var(--muted);
-        }
-
-        .search-box input {
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            padding: 10px 14px 10px 38px;
+            font-size: 0.82rem;
         }
 
         .page-shell {
-            padding: 28px;
+            padding: 24px 24px 40px;
         }
 
-        .page-heading {
-            display: flex;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 22px;
-        }
-
-        .page-actions,
-        .d-flex.justify-content-between > .btn,
-        .d-flex.justify-content-between > .d-flex {
-            flex: 0 0 auto;
-        }
-
-        .page-heading h2 {
-            margin: 0;
-            font-size: 1.55rem;
-            font-weight: 800;
-        }
-
-        .page-heading p {
-            color: var(--muted);
-            margin: 6px 0 0;
-        }
-
-        .panel,
-        .table-card,
-        .form-card {
-            background: var(--panel);
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            box-shadow: 0 12px 28px rgba(35, 49, 66, 0.08);
-        }
-
-        .table-card,
-        .form-card {
-            padding: 22px;
-        }
-
-        .form-card {
-            max-width: 880px;
+        .content-area {
+            flex: 1 1 auto;
         }
 
         .dashboard-card {
-            border: 1px solid rgba(255, 255, 255, 0.45);
+            border: 0;
             border-radius: 8px;
             color: #fff;
-            min-height: 132px;
-            box-shadow: 0 12px 24px rgba(35, 49, 66, 0.14);
-            overflow: hidden;
-        }
-
-        .dashboard-card .card-body {
-            position: relative;
-            z-index: 1;
-            padding: 20px;
+            box-shadow: 0 8px 18px rgba(31, 45, 61, 0.12);
         }
 
         .dashboard-card h6 {
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-size: 0.78rem;
-            font-weight: 700;
+            font-weight: 600;
             text-transform: uppercase;
         }
 
         .dashboard-card h2 {
+            font-size: 1.65rem;
             margin: 0;
-            font-size: 2rem;
-            font-weight: 800;
+            font-weight: 700;
         }
 
         .dashboard-card i {
-            opacity: 0.78;
+            opacity: 0.75;
         }
 
         .card-blue {
-            background: linear-gradient(135deg, var(--blue), #1f5e7c);
+            background: #247ba0;
         }
 
         .card-green {
-            background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+            background: #1abb9c;
         }
 
         .card-orange {
-            background: linear-gradient(135deg, var(--accent), #c87907);
+            background: #f39c12;
         }
 
         .card-red {
-            background: linear-gradient(135deg, var(--danger), #bd3327);
+            background: #e74c3c;
         }
 
         .card-purple {
-            background: linear-gradient(135deg, var(--purple), #4d3ec7);
+            background: #7d5fff;
         }
 
         .card-dark {
-            background: linear-gradient(135deg, #34495e, #22313f);
+            background: #34495e;
         }
 
-        .stat-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 9px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.18);
-            font-size: 0.78rem;
-            margin-top: 12px;
+        .table-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 8px 18px rgba(31, 45, 61, 0.08);
         }
 
-        .panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 18px 20px 0;
-        }
-
-        .panel-header h5,
         .table-card h5 {
-            margin: 0;
-            font-size: 1rem;
-            font-weight: 800;
-        }
-
-        .panel-body {
-            padding: 18px 20px 20px;
-        }
-
-        .export-toolbar {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 12px;
-        }
-
-        .chart-box {
-            min-height: 280px;
-        }
-
-        .mini-metric {
-            border-bottom: 1px solid var(--line);
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 13px 0;
-        }
-
-        .mini-metric:last-child {
-            border-bottom: 0;
-        }
-
-        .mini-metric span {
-            color: var(--muted);
-        }
-
-        .mini-metric strong {
-            font-size: 1.05rem;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-            justify-content: flex-end;
-            align-items: center;
-            white-space: nowrap;
-            min-width: max-content;
-        }
-
-        .action-buttons .btn {
-            width: 34px;
-            height: 32px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
+            margin-bottom: 16px;
+            font-weight: 700;
         }
 
         .table {
-            --bs-table-bg: transparent;
+            font-size: 0.84rem;
+            line-height: 1.25;
+            margin-bottom: 0;
+            table-layout: auto;
+            width: 100%;
         }
 
-        .table td,
-        .table th {
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .table-responsive > .table,
+        .dataTable {
+            min-width: max-content;
+        }
+
+        .table th,
+        .table td {
+            padding: 0.38rem 0.62rem;
             vertical-align: middle;
         }
 
+        .table th {
+            min-width: 130px;
+            white-space: nowrap;
+        }
+
+        .table td {
+            min-width: 110px;
+            overflow-wrap: anywhere;
+        }
+
         .table th.text-end,
+        .table td.text-end,
+        .table th:last-child,
         .table td:last-child {
+            min-width: 105px;
             white-space: nowrap;
         }
 
-        .table thead th {
-            color: #536273;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-        }
-
-        .btn {
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            white-space: nowrap;
+        .table .btn,
+        .table .form-control,
+        .table .form-select {
+            font-size: 0.8rem;
+            min-height: 30px;
+            padding-bottom: 0.25rem;
+            padding-top: 0.25rem;
         }
 
         @media (max-width: 991.98px) {
@@ -437,164 +375,215 @@
             }
 
             .sidebar {
-                position: relative;
-                width: 100%;
-                height: auto;
-                flex: none;
+                min-height: auto;
+                position: static;
             }
 
-            .sidebar-section {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 6px;
+            .sidebar-brand {
+                min-height: 62px;
             }
 
-            .sidebar-label,
+            .sidebar-nav {
+                display: none;
+                max-height: calc(100vh - 62px);
+            }
+
+            .sidebar-nav.show {
+                display: block;
+            }
+
             .sidebar-footer {
                 display: none;
             }
 
             .topbar {
-                position: relative;
-                padding: 16px;
-                align-items: flex-start;
-                flex-direction: column;
-            }
-
-            .topbar .search-box {
-                max-width: none;
+                min-height: 62px;
+                padding: 0 16px;
             }
 
             .page-shell {
-                padding: 18px;
+                padding: 18px 14px 32px;
+            }
+        }
+
+        @media print {
+            .sidebar,
+            .topbar {
+                display: none !important;
             }
 
-            .page-heading {
-                align-items: flex-start;
-                flex-direction: column;
+            .app-layout,
+            .main-panel,
+            .content-area {
+                display: block;
+                min-height: auto;
             }
 
-            .page-heading .d-flex,
-            .d-flex.justify-content-between {
-                flex-wrap: wrap;
+            .page-shell {
+                padding: 0;
             }
         }
     </style>
 </head>
 <body>
+    {% with current_url=request.resolver_match.url_name %}
     <div class="app-layout">
         <aside class="sidebar">
-            <div class="brand-block">
-                <div class="d-flex align-items-center">
+            <div class="d-flex align-items-center justify-content-between">
+                <a class="sidebar-brand flex-grow-1" href="{% url 'dashboard' %}">
                     <span class="brand-mark"><i class="fa fa-shield-halved"></i></span>
-                    <div>
-                        <div class="brand-title">Guard Management</div>
-                        <div class="brand-subtitle">Operations Console</div>
-                    </div>
-                </div>
+                    <span>
+                        <span class="brand-title">Guard Management</span>
+                        <span class="brand-subtitle">Operations Portal</span>
+                    </span>
+                </a>
+                <button class="btn btn-sm btn-outline-light d-lg-none me-3" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarNav" aria-controls="sidebarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <i class="fa fa-bars"></i>
+                </button>
             </div>
 
-            {% with current_url=request.resolver_match.url_name %}
-            <div class="sidebar-section">
-                <div class="sidebar-group">
-                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#mainMenu" aria-expanded="{% if current_url == 'dashboard' or 'guard' in current_url and 'advance' not in current_url or 'supervisor' in current_url or 'client' in current_url %}true{% else %}false{% endif %}" aria-controls="mainMenu">
-                        <span class="sidebar-group-title"><i class="fa fa-layer-group"></i><span>Main</span></span>
-                        <i class="fa fa-chevron-down"></i>
+            <nav id="sidebarNav" class="sidebar-nav collapse d-lg-block">
+                <a class="sidebar-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
+                    <i class="fa fa-gauge-high"></i> Dashboard
+                </a>
+
+                <div class="sidebar-module">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#peopleModule" aria-controls="peopleModule" aria-expanded="{% if current_url in 'supervisor_list supervisor_add supervisor_edit supervisor_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}true{% else %}false{% endif %}">
+                        <span class="module-title"><i class="fa fa-users"></i> People</span>
+                        <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="mainMenu" class="collapse {% if current_url == 'dashboard' or 'guard' in current_url and 'advance' not in current_url or 'supervisor' in current_url or 'client' in current_url %}show{% endif %}">
-                        <div class="sidebar-submenu">
-                            <a class="sidebar-link {% if current_url == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
-                                <i class="fa fa-chart-line"></i><span>Dashboard</span>
+                    <div id="peopleModule" class="collapse {% if current_url in 'supervisor_list supervisor_add supervisor_edit supervisor_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}show{% endif %}">
+                        <div class="module-menu">
+                            <a class="sidebar-link {% if current_url in 'supervisor_list supervisor_add supervisor_edit supervisor_delete' %}active{% endif %}" href="{% url 'supervisor_list' %}">
+                                <i class="fa fa-user-tie"></i> Supervisors
                             </a>
-                            <a class="sidebar-link {% if 'guard' in current_url and 'advance' not in current_url %}active{% endif %}" href="{% url 'guard_list' %}">
-                                <i class="fa fa-user-shield"></i><span>Guards</span>
+                            <a class="sidebar-link {% if current_url in 'guard_list guard_add guard_edit guard_delete' %}active{% endif %}" href="{% url 'guard_list' %}">
+                                <i class="fa fa-user-shield"></i> Guards
                             </a>
-                            <a class="sidebar-link {% if 'supervisor' in current_url %}active{% endif %}" href="{% url 'supervisor_list' %}">
-                                <i class="fa fa-user-tie"></i><span>Supervisors</span>
-                            </a>
-                            <a class="sidebar-link {% if 'client' in current_url %}active{% endif %}" href="{% url 'client_list' %}">
-                                <i class="fa fa-building"></i><span>Clients</span>
+                            <a class="sidebar-link {% if current_url in 'client_list client_add client_edit client_delete' %}active{% endif %}" href="{% url 'client_list' %}">
+                                <i class="fa fa-building"></i> Clients
                             </a>
                         </div>
                     </div>
                 </div>
 
-                <div class="sidebar-group">
-                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#operationsMenu" aria-expanded="{% if 'deployment' in current_url or current_url == 'program_guard' or 'attendance' in current_url or 'shift' in current_url or 'incident' in current_url or current_url == 'schedule_report' %}true{% else %}false{% endif %}" aria-controls="operationsMenu">
-                        <span class="sidebar-group-title"><i class="fa fa-briefcase"></i><span>Operations</span></span>
-                        <i class="fa fa-chevron-down"></i>
+                <div class="sidebar-module">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#operationsModule" aria-controls="operationsModule" aria-expanded="{% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard attendance_list attendance_add attendance_edit attendance_delete shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}true{% else %}false{% endif %}">
+                        <span class="module-title"><i class="fa fa-briefcase"></i> Operations</span>
+                        <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="operationsMenu" class="collapse {% if 'deployment' in current_url or current_url == 'program_guard' or 'attendance' in current_url or 'shift' in current_url or 'incident' in current_url or current_url == 'schedule_report' %}show{% endif %}">
-                        <div class="sidebar-submenu">
-                            <a class="sidebar-link {% if current_url == 'program_guard' %}active{% endif %}" href="{% url 'program_guard' %}">
-                                <i class="fa fa-user-plus"></i><span>Program Guard</span>
+                    <div id="operationsModule" class="collapse {% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard attendance_list attendance_add attendance_edit attendance_delete shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}show{% endif %}">
+                        <div class="module-menu">
+                            <a class="sidebar-link {% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard' %}active{% endif %}" href="{% url 'deployment_list' %}">
+                                <i class="fa fa-location-dot"></i> Deployments
                             </a>
-                            <a class="sidebar-link {% if 'deployment' in current_url %}active{% endif %}" href="{% url 'deployment_list' %}">
-                                <i class="fa fa-location-dot"></i><span>Deployments</span>
+                            <a class="sidebar-link {% if current_url in 'attendance_list attendance_add attendance_edit attendance_delete' %}active{% endif %}" href="{% url 'attendance_list' %}">
+                                <i class="fa fa-clipboard-check"></i> Attendance
                             </a>
-                            <a class="sidebar-link {% if 'attendance' in current_url %}active{% endif %}" href="{% url 'attendance_list' %}">
-                                <i class="fa fa-calendar-check"></i><span>Attendance</span>
+                            <a class="sidebar-link {% if current_url in 'shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template' %}active{% endif %}" href="{% url 'shift_list' %}">
+                                <i class="fa fa-calendar-days"></i> Shifts
                             </a>
-                            <a class="sidebar-link {% if 'shift' in current_url %}active{% endif %}" href="{% url 'shift_list' %}">
-                                <i class="fa fa-clock"></i><span>Shifts</span>
+                            <a class="sidebar-link {% if current_url in 'asset_list asset_add asset_edit asset_delete' %}active{% endif %}" href="{% url 'asset_list' %}">
+                                <i class="fa fa-boxes-stacked"></i> Assets
                             </a>
-                            <a class="sidebar-link {% if 'incident' in current_url %}active{% endif %}" href="{% url 'incident_list' %}">
-                                <i class="fa fa-triangle-exclamation"></i><span>Incidents</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-module">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#payrollCasesModule" aria-controls="payrollCasesModule" aria-expanded="{% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual advance_request_list advance_request_add advance_request_edit advance_request_delete incident_list incident_add incident_edit incident_delete incident_pdf_report disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}true{% else %}false{% endif %}">
+                        <span class="module-title"><i class="fa fa-folder-open"></i> Payroll & Cases</span>
+                        <i class="fa fa-chevron-down module-chevron"></i>
+                    </button>
+                    <div id="payrollCasesModule" class="collapse {% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual advance_request_list advance_request_add advance_request_edit advance_request_delete incident_list incident_add incident_edit incident_delete incident_pdf_report disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}show{% endif %}">
+                        <div class="module-menu">
+                            <a class="sidebar-link {% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual' %}active{% endif %}" href="{% url 'salary_list' %}">
+                                <i class="fa fa-money-bill-wave"></i> Salaries
                             </a>
-                            <a class="sidebar-link {% if current_url == 'schedule_report' %}active{% endif %}" href="{% url 'schedule_report' %}">
-                                <i class="fa fa-file-lines"></i><span>Schedule Reports</span>
+                            <a class="sidebar-link {% if current_url in 'advance_request_list advance_request_add advance_request_edit advance_request_delete' %}active{% endif %}" href="{% url 'advance_request_list' %}">
+                                <i class="fa fa-hand-holding-dollar"></i> Advances
                             </a>
+                            <a class="sidebar-link {% if current_url in 'incident_list incident_add incident_edit incident_delete incident_pdf_report' %}active{% endif %}" href="{% url 'incident_list' %}">
+                                <i class="fa fa-triangle-exclamation"></i> Incidents
+                            </a>
+                            <a class="sidebar-link {% if current_url in 'disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}active{% endif %}" href="{% url 'disciplinary_action_list' %}">
+                                <i class="fa fa-scale-balanced"></i> Disciplinary
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-module">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#reportsDevicesModule" aria-controls="reportsDevicesModule" aria-expanded="{% if current_url in 'attendance_query_report schedule_report schedule_report_csv_export iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}true{% else %}false{% endif %}">
+                        <span class="module-title"><i class="fa fa-chart-simple"></i> Reports & Devices</span>
+                        <i class="fa fa-chevron-down module-chevron"></i>
+                    </button>
+                    <div id="reportsDevicesModule" class="collapse {% if current_url in 'attendance_query_report schedule_report schedule_report_csv_export iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}show{% endif %}">
+                        <div class="module-menu">
                             <a class="sidebar-link {% if current_url == 'attendance_query_report' %}active{% endif %}" href="{% url 'attendance_query_report' %}">
-                                <i class="fa fa-magnifying-glass-chart"></i><span>Attendance Query</span>
+                                <i class="fa fa-chart-column"></i> Attendance Report
+                            </a>
+                            <a class="sidebar-link {% if current_url in 'schedule_report schedule_report_csv_export' %}active{% endif %}" href="{% url 'schedule_report' %}">
+                                <i class="fa fa-table-list"></i> Schedule Report
+                            </a>
+                            <a class="sidebar-link {% if current_url in 'iot_device_list iot_device_add iot_device_edit iot_device_delete' %}active{% endif %}" href="{% url 'iot_device_list' %}">
+                                <i class="fa fa-microchip"></i> IoT Devices
+                            </a>
+                            <a class="sidebar-link {% if current_url == 'iot_swipe_attendance' %}active{% endif %}" href="{% url 'iot_swipe_attendance' %}">
+                                <i class="fa fa-id-card"></i> Swipe Attendance
+                            </a>
+                            <a class="sidebar-link {% if current_url == 'audit_log_list' %}active{% endif %}" href="{% url 'audit_log_list' %}">
+                                <i class="fa fa-clock-rotate-left"></i> Audit Logs
                             </a>
                         </div>
                     </div>
                 </div>
 
-                <div class="sidebar-group">
-                    <button class="sidebar-group-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#administrationMenu" aria-expanded="{% if 'asset' in current_url or 'salary' in current_url or 'advance_request' in current_url or 'disciplinary_action' in current_url %}true{% else %}false{% endif %}" aria-controls="administrationMenu">
-                        <span class="sidebar-group-title"><i class="fa fa-gears"></i><span>Administration</span></span>
-                        <i class="fa fa-chevron-down"></i>
-                    </button>
-                    <div id="administrationMenu" class="collapse {% if 'asset' in current_url or 'salary' in current_url or 'advance_request' in current_url or 'disciplinary_action' in current_url %}show{% endif %}">
-                        <div class="sidebar-submenu">
-                            <a class="sidebar-link {% if 'asset' in current_url %}active{% endif %}" href="{% url 'asset_list' %}">
-                                <i class="fa fa-box"></i><span>Assets</span>
-                            </a>
-                            <a class="sidebar-link {% if 'salary' in current_url %}active{% endif %}" href="{% url 'salary_list' %}">
-                                <i class="fa fa-money-bill"></i><span>Salaries</span>
-                            </a>
-                            <a class="sidebar-link {% if 'advance_request' in current_url %}active{% endif %}" href="{% url 'advance_request_list' %}">
-                                <i class="fa fa-wallet"></i><span>Advances</span>
-                            </a>
-                            <a class="sidebar-link {% if 'disciplinary_action' in current_url %}active{% endif %}" href="{% url 'disciplinary_action_list' %}">
-                                <i class="fa fa-scale-balanced"></i><span>Disciplinary</span>
-                            </a>
-                        </div>
-                    </div>
+                <div class="d-lg-none">
+                    <div class="nav-section-label">Account</div>
+                    {% if request.user.is_authenticated %}
+                        <a class="sidebar-link" href="{% url 'signout' %}">
+                            <i class="fa fa-right-from-bracket"></i> Sign Out
+                        </a>
+                    {% else %}
+                        <a class="sidebar-link" href="{% url 'signin' %}">
+                            <i class="fa fa-right-to-bracket"></i> Sign In
+                        </a>
+                    {% endif %}
                 </div>
-            </div>
-            {% endwith %}
+            </nav>
 
             <div class="sidebar-footer">
-                <div class="fw-semibold text-white">Secure patrol oversight</div>
-                <div>Records, deployments, incidents, and finance in one workspace.</div>
+                {% if request.user.is_authenticated %}
+                    <a class="sidebar-link" href="{% url 'signout' %}">
+                        <i class="fa fa-right-from-bracket"></i> Sign Out
+                    </a>
+                {% else %}
+                    <a class="sidebar-link" href="{% url 'signin' %}">
+                        <i class="fa fa-right-to-bracket"></i> Sign In
+                    </a>
+                {% endif %}
             </div>
         </aside>
 
-        <div class="content-area">
+        <div class="main-panel">
             <header class="topbar">
                 <div>
-                    <h1>Operations Dashboard</h1>
-                    <div class="text-muted small">Live overview of security workforce activity</div>
+                    <p class="topbar-title">Guard Management System</p>
+                    <div class="topbar-user">
+                        {% if request.user.is_authenticated %}
+                            Signed in as {{ request.user.username }}
+                        {% else %}
+                            Staff portal
+                        {% endif %}
+                    </div>
                 </div>
-                <div class="search-box">
-                    <i class="fa fa-search"></i>
-                    <input id="globalSearchInput" type="search" class="form-control" placeholder="Search records">
-                </div>
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'welcome' %}">
+                    <i class="fa fa-house me-1"></i> Public Page
+                </a>
             </header>
 
-            <main class="page-shell">
+            <main class="container-fluid page-shell content-area">
                 {% if messages %}
                     {% for message in messages %}
                         <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
@@ -608,108 +597,8 @@
             </main>
         </div>
     </div>
+    {% endwith %}
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            function cleanText(value) {
-                return String(value || "").replace(/\s+/g, " ").trim();
-            }
-
-            function escapeCell(value) {
-                return cleanText(value)
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;");
-            }
-
-            function exportTableToExcel(table) {
-                const headerCells = Array.from(table.querySelectorAll("thead th"));
-                const exportIndexes = headerCells
-                    .map((cell, index) => ({ cell, index }))
-                    .filter(({ cell }) => cleanText(cell.textContent).toLowerCase() !== "actions")
-                    .map(({ index }) => index);
-                const rows = [];
-
-                rows.push(exportIndexes.map(index => escapeCell(headerCells[index].textContent)));
-
-                table.querySelectorAll("tbody tr").forEach(row => {
-                    const cells = Array.from(row.children);
-
-                    if (cells.length <= 1 && cells[0] && cells[0].hasAttribute("colspan")) {
-                        return;
-                    }
-
-                    rows.push(exportIndexes.map(index => escapeCell(cells[index] ? cells[index].textContent : "")));
-                });
-
-                const worksheet = rows
-                    .map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`)
-                    .join("");
-                const workbook = `
-                    <html xmlns:o="urn:schemas-microsoft-com:office:office"
-                          xmlns:x="urn:schemas-microsoft-com:office:excel"
-                          xmlns="http://www.w3.org/TR/REC-html40">
-                    <head><meta charset="utf-8"></head>
-                    <body><table>${worksheet}</table></body></html>
-                `;
-                const title = table.dataset.exportTitle || document.querySelector(".page-shell h2")?.textContent || "Export";
-                const filename = cleanText(title).replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "Export";
-                const blob = new Blob([workbook], { type: "application/vnd.ms-excel" });
-                const link = document.createElement("a");
-
-                link.href = URL.createObjectURL(blob);
-                link.download = `${filename}.xls`;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                URL.revokeObjectURL(link.href);
-            }
-
-            document.querySelectorAll("table.export-table").forEach(table => {
-                if (table.dataset.exportReady === "true") {
-                    return;
-                }
-
-                table.dataset.exportReady = "true";
-
-                const toolbar = document.createElement("div");
-                const button = document.createElement("button");
-
-                toolbar.className = "export-toolbar";
-                button.type = "button";
-                button.className = "btn btn-success btn-sm";
-                button.innerHTML = '<i class="fa fa-file-excel"></i> Export Excel';
-                button.addEventListener("click", function () {
-                    exportTableToExcel(table);
-                });
-
-                toolbar.appendChild(button);
-                table.closest(".table-responsive").before(toolbar);
-            });
-
-            const globalSearchInput = document.getElementById("globalSearchInput");
-            const searchableTables = Array.from(document.querySelectorAll("table.export-table"));
-
-            if (globalSearchInput && searchableTables.length) {
-                globalSearchInput.addEventListener("input", function () {
-                    const query = cleanText(globalSearchInput.value).toLowerCase();
-
-                    searchableTables.forEach(table => {
-                        table.querySelectorAll("tbody tr").forEach(row => {
-                            const isEmptyRow = row.children.length <= 1 && row.children[0] && row.children[0].hasAttribute("colspan");
-
-                            if (isEmptyRow) {
-                                row.style.display = query ? "none" : "";
-                                return;
-                            }
-
-                            row.style.display = cleanText(row.textContent).toLowerCase().includes(query) ? "" : "none";
-                        });
-                    });
-                });
-            }
-        });
-    </script>
 </body>
 </html>

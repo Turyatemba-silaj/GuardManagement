@@ -13,12 +13,12 @@
     }
 
     .query-filter {
-        padding: 28px 4px 62px;
+        padding: 28px 28px 62px;
     }
 
     .query-table-wrap {
         border-top: 1px solid #e5e9ef;
-        padding: 28px 4px 18px;
+        padding: 28px 28px 18px;
     }
 
     .query-title {
@@ -42,6 +42,48 @@
     .period-group .input-group-text {
         justify-content: center;
         border-radius: 0;
+    }
+
+    .query-filter-row {
+        align-items: end;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px 54px;
+    }
+
+    .query-employee-field {
+        flex: 0 0 250px;
+    }
+
+    .query-period-field {
+        flex: 0 0 420px;
+    }
+
+    .query-submit-column {
+        display: flex;
+        flex: 0 0 150px;
+        justify-content: flex-end;
+    }
+
+    .query-submit-column .btn {
+        min-width: 150px;
+    }
+
+    @media (max-width: 767.98px) {
+        .query-submit-column {
+            flex: 1 1 100%;
+            justify-content: stretch;
+            padding-top: 8px;
+        }
+
+        .query-employee-field,
+        .query-period-field {
+            flex: 1 1 100%;
+        }
+
+        .query-submit-column .btn {
+            width: 100%;
+        }
     }
 
     #attendanceQueryTable_wrapper .dt-buttons .btn {
@@ -91,13 +133,13 @@
     <form method="GET" class="query-filter">
         <div class="query-title">attendance report</div>
 
-        <div class="row g-4 align-items-end">
-            <div class="col-md-3">
+        <div class="query-filter-row">
+            <div class="query-employee-field">
                 <label class="filter-label" for="employee_number">Employee Number</label>
                 <input id="employee_number" type="text" name="employee_number" value="{{ selected_employee_number|default:'' }}" class="form-control">
             </div>
 
-            <div class="col-md-3">
+            <div class="query-period-field">
                 <label class="filter-label">Period</label>
                 <div class="period-group">
                     <input type="date" name="start_date" value="{{ selected_start_date|default:'' }}" class="form-control">
@@ -106,8 +148,8 @@
                 </div>
             </div>
 
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-success w-100">submit</button>
+            <div class="query-submit-column">
+                <button type="submit" class="btn btn-success">Submit</button>
             </div>
         </div>
     </form>

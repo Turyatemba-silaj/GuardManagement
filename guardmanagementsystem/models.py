@@ -1,10 +1,29 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from datetime import date, datetime
 from calendar import monthrange
 import re
+
+
+class AuditLog(models.Model):
+    action_id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    action = models.CharField(max_length=100)
+    description = models.TextField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        username = self.user.username if self.user else "System"
+        return f"{username} - {self.action} - {self.created_at}"
 
 
 def current_year():
@@ -37,6 +56,7 @@ class Guard(models.Model):
 
     guard_id = models.AutoField(primary_key=True)
     employee_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+    rfid_card_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=100)
     date_of_birth = models.DateField()
     phone = models.CharField(max_length=20)
@@ -48,6 +68,23 @@ class Guard(models.Model):
 
     def __str__(self):
         return self.full_name
+
+
+class IoTDevice(models.Model):
+    DEVICE_STATUS_CHOICES = [
+        (True, "Active"),
+        (False, "Inactive"),
+    ]
+
+    device_id = models.AutoField(primary_key=True)
+    device_name = models.CharField(max_length=100)
+    device_code = models.CharField(max_length=50, unique=True)
+    site_location = models.CharField(max_length=200)
+    api_key = models.CharField(max_length=100)
+    is_active = models.BooleanField(choices=DEVICE_STATUS_CHOICES, default=True)
+
+    def __str__(self):
+        return f"{self.device_name} - {self.site_location}"
     
 class Supervisor(models.Model):
     supervisor_id = models.AutoField(primary_key=True)
@@ -81,16 +118,8 @@ class Deployment(models.Model):
     ]
 
     deployment_id = models.AutoField(primary_key=True)
-    guard = models.ForeignKey(
-        Guard,
-        on_delete=models.CASCADE,
-        related_name='deployments'
-    )
-    client = models.ForeignKey(
-        Client,
-        on_delete=models.CASCADE,
-        related_name='deployments'
-    )
+    guard = models.ForeignKey(Guard, on_delete=models.CASCADE,related_name='deployments')
+    client = models.ForeignKey(Client,on_delete=models.CASCADE,related_name='deployments')
     site_location = models.CharField(max_length=200)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
@@ -134,22 +163,12 @@ class Attendance(models.Model):
     ]
 
     attendance_id = models.AutoField(primary_key=True)
-    guard = models.ForeignKey(
-        Guard,
-        on_delete=models.CASCADE,
-        related_name='attendances'
-    )
+    guard = models.ForeignKey(Guard, on_delete=models.CASCADE, related_name='attendances' )
     attendance_date = models.DateField()
     check_in_time = models.TimeField(null=True, blank=True)
     check_out_time = models.TimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Present')
-    replacement_guard = models.ForeignKey(
-        Guard,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='replacement_attendances'
-    )
+    replacement_guard = models.ForeignKey( Guard,on_delete=models.SET_NULL, null=True,blank=True, related_name='replacement_attendances' )
     absence_reason = models.TextField(blank=True)
 
     def __str__(self):

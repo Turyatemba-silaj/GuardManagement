@@ -1,0 +1,101 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>RFID Swipe Attendance</h2>
+        <p>Test the same attendance flow used by RFID IoT devices.</p>
+    </div>
+    <a href="{% url 'iot_device_list' %}" class="btn btn-outline-primary">
+        <i class="fa fa-microchip"></i> IoT Devices
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="form-card">
+            <h5 class="mb-3">RFID Swipe Simulation</h5>
+            <form method="POST">
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="device">IoT Device</label>
+                    <select id="device" name="device" class="form-control" required>
+                        <option value="">Select device</option>
+                        {% for device in devices %}
+                            <option value="{{ device.device_id }}">{{ device.device_name }} - {{ device.site_location }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="card_id">RFID Card Number</label>
+                    <input id="card_id" name="card_id" class="form-control" placeholder="Example: RFID12345" required autofocus>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="action">Action</label>
+                    <select id="action" name="action" class="form-control">
+                        <option value="check_in">Check In</option>
+                        <option value="check_out">Check Out</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa fa-id-card"></i> Simulate Swipe
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="table-card mb-4">
+            <h5 class="mb-3">ESP32 / NodeMCU POST Example</h5>
+            <p class="text-muted">
+                The IoT device sends RFID data to this endpoint after reading a guard card.
+            </p>
+            <pre class="bg-light border rounded p-3 mb-0"><code>POST /api/iot/attendance/
+Content-Type: application/json
+
+{
+  "device_code": "GATE-001",
+  "api_key": "12345",
+  "card_id": "RFID12345",
+  "action": "check_in"
+}</code></pre>
+        </div>
+
+        <div class="table-card">
+            <h5 class="mb-3">Recent Attendance</h5>
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Guard</th>
+                            <th>Date</th>
+                            <th>In</th>
+                            <th>Out</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for attendance in recent_attendances %}
+                            <tr>
+                                <td>{{ attendance.guard.full_name }}</td>
+                                <td>{{ attendance.attendance_date }}</td>
+                                <td>{{ attendance.check_in_time|default:"-" }}</td>
+                                <td>{{ attendance.check_out_time|default:"-" }}</td>
+                                <td>{{ attendance.status }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No attendance records yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

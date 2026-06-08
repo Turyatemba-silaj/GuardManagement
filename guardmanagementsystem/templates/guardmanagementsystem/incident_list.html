@@ -42,6 +42,9 @@
                         <td><span class="badge bg-danger">{{ incident.status }}</span></td>
                         <td>
                             <div class="action-buttons">
+                                <a href="{% url 'incident_pdf_report' incident.incident_id %}" class="btn btn-sm btn-outline-success" title="Download PDF report">
+                                    <i class="fa fa-file-pdf"></i>
+                                </a>
                                 <a href="{% url 'incident_edit' incident.incident_id %}" class="btn btn-sm btn-outline-primary">
                                     <i class="fa fa-pen"></i>
                                 </a>

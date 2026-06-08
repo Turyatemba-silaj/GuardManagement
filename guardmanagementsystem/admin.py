@@ -5,6 +5,7 @@ from .models import *
 # ============================================================
 # SUPERVISOR ADMIN
 # ============================================================
+admin.site.site_header = "Guard Management System"
 @admin.register(Supervisor)
 class SupervisorAdmin(admin.ModelAdmin):
     list_display = (
@@ -32,6 +33,8 @@ class SupervisorAdmin(admin.ModelAdmin):
 class GuardAdmin(admin.ModelAdmin):
     list_display = (
         "guard_id",
+        "employee_number",
+        "rfid_card_number",
         "full_name",
         "phone",
         "email",
@@ -41,6 +44,8 @@ class GuardAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
+        "employee_number",
+        "rfid_card_number",
         "full_name",
         "phone",
         "email",
@@ -64,6 +69,28 @@ class GuardAdmin(admin.ModelAdmin):
         return supervisor
 
     display_supervisor.short_description = "Supervisor"
+
+
+@admin.register(IoTDevice)
+class IoTDeviceAdmin(admin.ModelAdmin):
+    list_display = (
+        "device_id",
+        "device_name",
+        "device_code",
+        "site_location",
+        "is_active",
+    )
+
+    search_fields = (
+        "device_name",
+        "device_code",
+        "site_location",
+    )
+
+    list_filter = (
+        "is_active",
+        "site_location",
+    )
 
 
 # ============================================================
@@ -305,4 +332,31 @@ class AdvanceRequestAdmin(admin.ModelAdmin):
         "status",
         "request_date",
         "approved_date",
+    )
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "user",
+        "action",
+        "ip_address",
+    )
+    search_fields = (
+        "user__username",
+        "action",
+        "description",
+        "ip_address",
+    )
+    list_filter = (
+        "action",
+        "created_at",
+    )
+    readonly_fields = (
+        "user",
+        "action",
+        "description",
+        "ip_address",
+        "created_at",
     )

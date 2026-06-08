@@ -1,14 +1,19 @@
 {% extends "guardmanagementsystem/base.html" %}
 
 {% block content %}
-<div class="page-heading">
+    <div class="page-heading">
     <div>
-        <h2>Import Duty Roster</h2>
-        <p>Upload a CSV or XLSX roster to create shift schedules and display them in Roster Attendance.</p>
+        <h2>Import Scheduled Guard Roster</h2>
+        <p>Upload a CSV or XLSX schedule to create scheduled guard deployments, shifts, and attendance.</p>
     </div>
-    <a href="{% url 'shift_list' %}" class="btn btn-outline-secondary">
-        <i class="fa fa-arrow-left"></i> Back to Shifts
-    </a>
+    <div class="page-actions d-flex gap-2">
+        <a href="{% url 'schedule_csv_template' %}" class="btn btn-outline-success">
+            <i class="fa fa-file-csv"></i> Download CSV Template
+        </a>
+        <a href="{% url 'shift_list' %}" class="btn btn-outline-secondary">
+            <i class="fa fa-arrow-left"></i> Back to Shifts
+        </a>
+    </div>
 </div>
 
 <div class="form-card">
@@ -16,20 +21,51 @@
         {% csrf_token %}
 
         <div class="mb-3">
-            <label class="form-label fw-semibold" for="roster_file">Roster File</label>
+            <label class="form-label fw-semibold" for="roster_file">Schedule File</label>
             <input id="roster_file" type="file" name="roster_file" class="form-control" accept=".csv,.xlsx" required>
         </div>
 
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="schedule_month">Schedule Month</label>
+                <select id="schedule_month" name="schedule_month" class="form-control" required>
+                    <option value="1" {% if current_month == 1 %}selected{% endif %}>January</option>
+                    <option value="2" {% if current_month == 2 %}selected{% endif %}>February</option>
+                    <option value="3" {% if current_month == 3 %}selected{% endif %}>March</option>
+                    <option value="4" {% if current_month == 4 %}selected{% endif %}>April</option>
+                    <option value="5" {% if current_month == 5 %}selected{% endif %}>May</option>
+                    <option value="6" {% if current_month == 6 %}selected{% endif %}>June</option>
+                    <option value="7" {% if current_month == 7 %}selected{% endif %}>July</option>
+                    <option value="8" {% if current_month == 8 %}selected{% endif %}>August</option>
+                    <option value="9" {% if current_month == 9 %}selected{% endif %}>September</option>
+                    <option value="10" {% if current_month == 10 %}selected{% endif %}>October</option>
+                    <option value="11" {% if current_month == 11 %}selected{% endif %}>November</option>
+                    <option value="12" {% if current_month == 12 %}selected{% endif %}>December</option>
+                </select>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="schedule_year">Schedule Year</label>
+                <input id="schedule_year" type="number" name="schedule_year" class="form-control" value="{{ current_year }}" required>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-semibold" for="required_guards">Required Guards Per Site</label>
+                <input id="required_guards" type="number" name="required_guards" class="form-control" value="{{ required_guards }}" min="1" required>
+                <div class="form-text">Rows beyond this guard count for the same client/site/date will be skipped.</div>
+            </div>
+        </div>
+
         <div class="alert alert-info">
-            Supported formats: simple rows with <strong>employee_number</strong>, <strong>shift_date</strong>, <strong>shift_type</strong>,
-            or the schedule layout with <strong>Pers No</strong>, <strong>Name</strong>, and date columns like <strong>Mo/26</strong>.
-            Use <strong>D</strong> or <strong>O</strong> for day shift and <strong>N</strong> for night shift.
-            Optional attendance columns: <strong>status</strong>, <strong>present</strong>, <strong>absence_reason</strong>.
+            Supported monthly style: <strong>Guard</strong>, <strong>Client</strong>, <strong>Location</strong>, <strong>Shift type</strong>,
+            then day columns <strong>1</strong> to <strong>31</strong>. Use <strong>D</strong> for day shift,
+            <strong>N</strong> for night shift, and <strong>O</strong> for off day. Imported rows must match existing guards and clients;
+            active deployments will be created automatically when needed.
         </div>
 
         <div class="page-actions d-flex justify-content-end gap-2">
             <button type="submit" class="btn btn-success">
-                <i class="fa fa-upload"></i> Import Roster
+                <i class="fa fa-upload"></i> Import Schedule
             </button>
             <a href="{% url 'shift_list' %}" class="btn btn-secondary">
                 <i class="fa fa-xmark"></i> Cancel
