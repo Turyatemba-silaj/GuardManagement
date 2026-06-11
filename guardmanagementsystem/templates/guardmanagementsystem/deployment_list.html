@@ -6,10 +6,12 @@
         <h2>Deployments</h2>
         <p class="text-muted mb-0">Manage guard assignments to client sites</p>
     </div>
+
     <div class="page-actions d-flex gap-2">
         <a href="{% url 'program_guard' %}" class="btn btn-success">
             <i class="fa fa-user-plus"></i> Scheduled Guard
         </a>
+
         <a href="{% url 'deployment_add' %}" class="btn btn-primary">
             <i class="fa fa-plus"></i> Add Deployment
         </a>
@@ -21,8 +23,9 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Deployments">
             <thead>
                 <tr>
-                    <th>Guard</th>
-                    <th>Client</th>
+                    <th>Deployment ID</th>
+                    <th>GuardID</th>
+                    <th>Client ID</th>
                     <th>Location</th>
                     <th>Start</th>
                     <th>End</th>
@@ -30,20 +33,35 @@
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
+
             <tbody>
                 {% for deployment in deployments %}
                     <tr>
-                        <td>{{ deployment.guard }}</td>
-                        <td>{{ deployment.client }}</td>
+                        <td>{{ deployment.deployment_id }}</td>
+                        <td>{{ deployment.guard_id }}</td>
+                        <td>{{ deployment.client_id }}</td>
                         <td>{{ deployment.site_location }}</td>
-                        <td>{{ deployment.start_date }}</td>
-                        <td>{{ deployment.end_date|default:"-" }}</td>
-                        <td><span class="badge bg-info">{{ deployment.status }}</span></td>
+                        <td>{{ deployment.start_date|date:"M d, Y" }}</td>
+                        <td>{{ deployment.end_date|date:"M d, Y"|default:"-" }}</td>
+
                         <td>
+                            {% if deployment.status == "Active" %}
+                                <span class="badge bg-success">Active</span>
+                            {% elif deployment.status == "Completed" %}
+                                <span class="badge bg-secondary">Completed</span>
+                            {% elif deployment.status == "Cancelled" %}
+                                <span class="badge bg-danger">Cancelled</span>
+                            {% else %}
+                                <span class="badge bg-info">{{ deployment.status|default:"Pending" }}</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-end">
                             <div class="action-buttons">
                                 <a href="{% url 'deployment_edit' deployment.deployment_id %}" class="btn btn-sm btn-outline-primary">
                                     <i class="fa fa-pen"></i>
                                 </a>
+
                                 <a href="{% url 'deployment_delete' deployment.deployment_id %}" class="btn btn-sm btn-outline-danger">
                                     <i class="fa fa-trash"></i>
                                 </a>
@@ -52,7 +70,9 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">No deployments found.</td>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            No deployments found.
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>

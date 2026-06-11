@@ -2,10 +2,14 @@ from django.contrib import admin
 from .models import *
 
 
+
+from django.contrib import admin
+from .models import *
+
+
 # ============================================================
 # SUPERVISOR ADMIN
 # ============================================================
-admin.site.site_header = "Guard Management System"
 @admin.register(Supervisor)
 class SupervisorAdmin(admin.ModelAdmin):
     list_display = (
@@ -13,16 +17,12 @@ class SupervisorAdmin(admin.ModelAdmin):
         "full_name",
         "phone",
         "email",
-        "designation",
     )
+
     search_fields = (
         "full_name",
         "phone",
         "email",
-        "designation",
-    )
-    list_filter = (
-        "designation",
     )
 
 
@@ -33,18 +33,17 @@ class SupervisorAdmin(admin.ModelAdmin):
 class GuardAdmin(admin.ModelAdmin):
     list_display = (
         "guard_id",
-        "employee_number",
         "rfid_card_number",
         "full_name",
         "phone",
         "email",
         "display_supervisor",
         "date_of_joining",
+        "daily_rate",
         "status",
     )
 
     search_fields = (
-        "employee_number",
         "rfid_card_number",
         "full_name",
         "phone",
@@ -64,13 +63,14 @@ class GuardAdmin(admin.ModelAdmin):
             return "No Supervisor"
 
         if hasattr(supervisor, "all"):
-            return ", ".join([str(item) for item in supervisor.all()])
+            supervisors = supervisor.all()
+            if supervisors.exists():
+                return ", ".join(str(item) for item in supervisors)
+            return "No Supervisor"
 
         return supervisor
 
     display_supervisor.short_description = "Supervisor"
-
-
 @admin.register(IoTDevice)
 class IoTDeviceAdmin(admin.ModelAdmin):
     list_display = (
@@ -104,6 +104,7 @@ class ClientAdmin(admin.ModelAdmin):
         "contact_person",
         "phone",
         "email",
+        "address",
     )
 
     search_fields = (
@@ -335,6 +336,9 @@ class AdvanceRequestAdmin(admin.ModelAdmin):
     )
 
 
+# ============================================================
+# AUDIT LOG ADMIN
+# ============================================================
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = (
@@ -343,16 +347,19 @@ class AuditLogAdmin(admin.ModelAdmin):
         "action",
         "ip_address",
     )
+
     search_fields = (
         "user__username",
         "action",
         "description",
         "ip_address",
     )
+
     list_filter = (
         "action",
         "created_at",
     )
+
     readonly_fields = (
         "user",
         "action",

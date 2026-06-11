@@ -55,7 +55,7 @@ class Guard(models.Model):
     ]
 
     guard_id = models.AutoField(primary_key=True)
-    employee_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+    guard_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
     rfid_card_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=100)
     date_of_birth = models.DateField()
@@ -88,7 +88,7 @@ class IoTDevice(models.Model):
     
 class Supervisor(models.Model):
     supervisor_id = models.AutoField(primary_key=True)
-    employee_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+    supervisor_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
     guard_id = models.ForeignKey(Guard,on_delete=models.CASCADE)
     full_name = models.CharField(max_length=100)
     phone = models.CharField(max_length=20)
@@ -127,6 +127,20 @@ class Deployment(models.Model):
 
     def __str__(self):
         return f"{self.guard.full_name} deployed to {self.client.client_name}"
+
+class Supervisor(models.Model):
+    supervisor_id = models.AutoField(primary_key=True)
+    full_name = models.CharField(max_length=100)
+    supervisor_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
+    guard_id = models.ForeignKey(Guard,on_delete=models.CASCADE)
+    deployment_id = models.ForeignKey(Deployment,on_delete=models.CASCADE,null=True,blank=True)
+    phone = models.CharField(max_length=20)
+    email = models.EmailField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return self.full_name
+   
+
     
 class Asset(models.Model):
     STATUS_CHOICES = [

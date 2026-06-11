@@ -35,9 +35,6 @@ class GuardForm(forms.ModelForm):
         fields = '__all__'
 
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'full_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter guard full name'
@@ -76,8 +73,6 @@ class GuardForm(forms.ModelForm):
                 'step': '0.01'
             }),
         }
-
-
 class IoTDeviceForm(forms.ModelForm):
     class Meta:
         model = IoTDevice
