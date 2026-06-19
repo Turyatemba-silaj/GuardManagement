@@ -1,8 +1,10 @@
-from django.urls import path
+from django.urls import path, re_path
+from django.views.generic import RedirectView
 from . import views
 
 
 urlpatterns = [
+    re_path(r"^http:/*$", RedirectView.as_view(url="/dashboard/", permanent=False)),
     path("", views.welcome, name="welcome"),
     path("signup/", views.signup, name="signup"),
     path("signin/", views.signin, name="signin"),
@@ -10,6 +12,10 @@ urlpatterns = [
     path("forgot-password/", views.forgot_password, name="forgot_password"),
     path("reset-password/<uidb64>/<token>/", views.reset_password, name="reset_password"),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("users/", views.user_list, name="user_list"),
+    path("users/add/", views.user_add, name="user_add"),
+    path("users/edit/<int:id>/", views.user_edit, name="user_edit"),
+    path("users/delete/<int:id>/", views.user_delete, name="user_delete"),
     path("audit-logs/", views.audit_log_list, name="audit_log_list"),
     path("reports/attendance-query/", views.attendance_query_report, name="attendance_query_report"),
     path("reports/schedules/", views.schedule_report, name="schedule_report"),
@@ -23,10 +29,19 @@ urlpatterns = [
     path("guards/add/", views.guard_add, name="guard_add"),
     path("guards/edit/<int:id>/", views.guard_edit, name="guard_edit"),
     path("guards/delete/<int:id>/", views.guard_delete, name="guard_delete"),
+    path("rfid-cards/", views.rfid_card_list, name="rfid_card_list"),
+    path("rfid-cards/add/", views.rfid_card_add, name="rfid_card_add"),
+    path("rfid-cards/edit/<int:id>/", views.rfid_card_edit, name="rfid_card_edit"),
+    path("rfid-cards/delete/<int:id>/", views.rfid_card_delete, name="rfid_card_delete"),
+    path("rfid-cards/deactivate/<int:id>/", views.rfid_card_deactivate, name="rfid_card_deactivate"),
+    path("rfid-cards/activate/<int:id>/", views.rfid_card_activate, name="rfid_card_activate"),
     path("clients/", views.client_list, name="client_list"),
     path("clients/add/", views.client_add, name="client_add"),
     path("clients/edit/<int:id>/", views.client_edit, name="client_edit"),
     path("clients/delete/<int:id>/", views.client_delete, name="client_delete"),
+    path("client-communications/", views.client_communication_list, name="client_communication_list"),
+    path("client-communications/add/", views.client_communication_add, name="client_communication_add"),
+    path("client-communications/<int:id>/update/", views.client_communication_update, name="client_communication_update"),
     path("deployments/", views.deployment_list, name="deployment_list"),
     path("deployments/program-guard/", views.program_guard, name="program_guard"),
     path("deployments/add/", views.deployment_add, name="deployment_add"),
@@ -54,6 +69,7 @@ urlpatterns = [
     path("salaries/", views.salary_list, name="salary_list"),
     path("salaries/add/", views.salary_add, name="salary_add"),
     path("salaries/payslips/", views.salary_payslip_general, name="salary_payslip_general"),
+    path("salaries/payslip/attendance/<int:guard_id>/<int:year>/<int:month>/", views.salary_payslip_from_attendance, name="salary_payslip_from_attendance"),
     path("salaries/payslip/<int:id>/", views.salary_payslip_individual, name="salary_payslip_individual"),
     path("salaries/edit/<int:id>/", views.salary_edit, name="salary_edit"),
     path("salaries/delete/<int:id>/", views.salary_delete, name="salary_delete"),
@@ -67,7 +83,9 @@ urlpatterns = [
     path("disciplinary-actions/edit/<int:id>/", views.disciplinary_action_edit, name="disciplinary_action_edit"),
     path("disciplinary-actions/delete/<int:id>/", views.disciplinary_action_delete, name="disciplinary_action_delete"),
     path("advance-requests/", views.advance_request_list, name="advance_request_list"),
+    path("advance-requests/remote/", views.advance_request_remote, name="advance_request_remote"),
     path("advance-requests/add/", views.advance_request_add, name="advance_request_add"),
     path("advance-requests/edit/<int:id>/", views.advance_request_edit, name="advance_request_edit"),
     path("advance-requests/delete/<int:id>/", views.advance_request_delete, name="advance_request_delete"),
+    path("advance-requests/<int:id>/<str:decision>/", views.advance_request_decision, name="advance_request_decision"),
 ]

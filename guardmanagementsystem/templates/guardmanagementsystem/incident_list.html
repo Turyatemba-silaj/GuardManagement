@@ -16,14 +16,14 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Incidents">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>Time</th>
+                    <th>Incident ID</th>
+                    <th>Guard Number</th>
+                    <th>Incident Date</th>
+                    <th>Incident Time</th>
+                    <th>Incident Type</th>
                     <th>Location</th>
-                    <th>Nature</th>
-                    <th>Details</th>
-                    <th>Full Name</th>
-                    <th>Issued By</th>
-                    <th>Further Comments</th>
+                    <th>Description</th>
+                    <th>Reported By</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -31,20 +31,17 @@
             <tbody>
                 {% for incident in incidents %}
                     <tr>
+                        <td>{{ incident.incident_id }}</td>
+                        <td>{{ incident.guard.guard_number }}</td>
                         <td>{{ incident.incident_date }}</td>
                         <td>{{ incident.incident_time|time:"h:i A"|default:"-" }}</td>
-                        <td>{{ incident.location }}</td>
                         <td>{{ incident.incident_type }}</td>
+                        <td>{{ incident.location }}</td>
                         <td>{{ incident.description|truncatechars:70 }}</td>
-                        <td>{{ incident.involved_full_name }}</td>
                         <td>{{ incident.reporter_name }}</td>
-                        <td>{{ incident.further_comments|truncatechars:50|default:"-" }}</td>
-                        <td><span class="badge bg-danger">{{ incident.status }}</span></td>
+                        <td><span class="badge bg-secondary">{{ incident.status }}</span></td>
                         <td>
                             <div class="action-buttons">
-                                <a href="{% url 'incident_pdf_report' incident.incident_id %}" class="btn btn-sm btn-outline-success" title="Download PDF report">
-                                    <i class="fa fa-file-pdf"></i>
-                                </a>
                                 <a href="{% url 'incident_edit' incident.incident_id %}" class="btn btn-sm btn-outline-primary">
                                     <i class="fa fa-pen"></i>
                                 </a>

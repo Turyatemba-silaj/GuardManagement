@@ -283,11 +283,8 @@
                 <span>Guard Management</span>
             </a>
             <div class="d-flex align-items-center gap-2">
-                <a href="{% url 'admin:index' %}" class="btn btn-sm btn-outline-light">
-                    Admin Page
-                </a>
-                <a href="{% url 'dashboard' %}" class="btn btn-sm btn-outline-light">
-                    Staff Portal
+                <a href="{% url 'signin' %}" class="btn btn-sm btn-outline-light">
+                    Sign In
                 </a>
             </div>
         </div>
@@ -305,7 +302,7 @@
                 </p>
                 <div class="hero-actions">
                     <a href="#services" class="btn btn-security">Explore Services</a>
-                    <a href="{% url 'dashboard' %}" class="btn btn-outline-light">Enter Management System</a>
+                    <a href="{% url 'signin' %}" class="btn btn-outline-light">Enter Management System</a>
                 </div>
             </div>
 
@@ -394,7 +391,7 @@
                         <h2>Secure your operations with better visibility.</h2>
                         <p>Use the staff portal to manage guards, shifts, incidents, attendance, salaries, and reports.</p>
                     </div>
-                    <a href="{% url 'dashboard' %}" class="btn btn-security">Open Staff Portal</a>
+                    <a href="{% url 'signin' %}" class="btn btn-security">Open Staff Portal</a>
                 </div>
             </div>
         </section>

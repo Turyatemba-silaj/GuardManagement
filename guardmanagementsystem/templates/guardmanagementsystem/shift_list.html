@@ -21,17 +21,19 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Shifts">
             <thead>
                 <tr>
-                    <th>Shift</th>
+                    <th>Shift Id</th>
+                    <th>Shift Name</th>
                     <th>Guard</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Type</th>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                    <th>Shift Type</th>
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for shift in shifts %}
                     <tr>
+                        <td>{{ shift.shift_id }}</td>
                         <td>{{ shift.shift_name }}</td>
                         <td>{{ shift.guard }}</td>
                         <td>{{ shift.start_time }}</td>

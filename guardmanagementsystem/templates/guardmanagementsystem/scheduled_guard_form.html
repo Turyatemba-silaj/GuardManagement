@@ -218,6 +218,9 @@
         const monthSelect = document.getElementById("schedule_month");
         const yearInput = document.getElementById("schedule_year");
         const codeInputs = Array.from(document.querySelectorAll(".schedule-code"));
+        const mainGuardSelect = document.getElementById("{{ form.guard.id_for_label }}");
+        const relieverGuardSelect = document.getElementById("{{ form.reliever_guard.id_for_label }}");
+        const additionalGuardsSelect = document.getElementById("{{ form.additional_guards.id_for_label }}");
 
         function daysInMonth(year, month) {
             return new Date(year, month, 0).getDate();
@@ -237,6 +240,26 @@
             });
         }
 
+        function syncGuardChoices() {
+            if (!mainGuardSelect || !relieverGuardSelect || !additionalGuardsSelect) {
+                return;
+            }
+
+            const blockedValues = new Set([
+                mainGuardSelect.value,
+                relieverGuardSelect.value
+            ].filter(Boolean));
+
+            Array.from(additionalGuardsSelect.options).forEach(function (option) {
+                const shouldBlock = blockedValues.has(option.value);
+                option.hidden = shouldBlock;
+                option.disabled = shouldBlock;
+                if (shouldBlock) {
+                    option.selected = false;
+                }
+            });
+        }
+
         document.querySelectorAll("[data-fill-code]").forEach(function (button) {
             button.addEventListener("click", function () {
                 const code = button.getAttribute("data-fill-code");
@@ -250,6 +273,11 @@
 
         monthSelect.addEventListener("change", syncMonthDays);
         yearInput.addEventListener("input", syncMonthDays);
+        if (mainGuardSelect && relieverGuardSelect && additionalGuardsSelect) {
+            mainGuardSelect.addEventListener("change", syncGuardChoices);
+            relieverGuardSelect.addEventListener("change", syncGuardChoices);
+            syncGuardChoices();
+        }
         syncMonthDays();
     });
 </script>

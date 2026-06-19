@@ -16,7 +16,8 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Assets">
             <thead>
                 <tr>
-                    <th>Asset</th>
+                    <th>Asset ID</th>
+                    <th>Asset Name</th>
                     <th>Type</th>
                     <th>Serial Number</th>
                     <th>Assigned Guard</th>
@@ -28,10 +29,11 @@
             <tbody>
                 {% for asset in assets %}
                     <tr>
+                        <td>{{ asset.asset_id }}</td>
                         <td>{{ asset.asset_name }}</td>
                         <td>{{ asset.asset_type }}</td>
                         <td>{{ asset.serial_number }}</td>
-                        <td>{{ asset.guard|default:"-" }}</td>
+                        <td>{{ asset.guard }}</td>
                         <td>{{ asset.purchase_date }}</td>
                         <td><span class="badge bg-warning text-dark">{{ asset.status }}</span></td>
                         <td>

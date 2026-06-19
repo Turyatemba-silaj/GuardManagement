@@ -228,8 +228,7 @@
     <div class="payslip-masthead">
         <div>
             <p class="company-name">Guard Management System</p>
-            <div class="text-muted">Employee payroll statement</div>
-            <div class="text-muted">Confidential salary document</div>
+              
         </div>
         <div class="document-title">Payslip</div>
     </div>
@@ -319,7 +318,7 @@
                         <td class="amount">{{ payroll.lst_deduction }}</td>
                     </tr>
                     <tr>
-                        <td>Salary Advance Deduction</td>
+                        <td>Salary Advance Deduction (20% Gross)</td>
                         <td class="amount">{{ payroll.advance_deduction }}</td>
                     </tr>
                     <tr>
@@ -348,14 +347,20 @@
                 <tr>
                     <th>Salary Advance Total</th>
                     <td class="amount">{{ payroll.advance_total }}</td>
-                    <th>Advance Balance</th>
-                    <td class="amount">{{ payroll.advance_balance }}</td>
+                    <th>Monthly Advance Installment</th>
+                    <td class="amount">{{ payroll.advance_installment_limit }}</td>
                 </tr>
                 <tr>
+                    <th>Advance Balance</th>
+                    <td class="amount">{{ payroll.advance_balance }}</td>
                     <th>Annual Local Service Tax</th>
                     <td class="amount">{{ payroll.lst_annual }}</td>
+                </tr>
+                <tr>
                     <th>Local Service Tax Deduction</th>
                     <td class="amount">{{ payroll.lst_deduction }}</td>
+                    <th></th>
+                    <td></td>
                 </tr>
             </tbody>
         </table>
@@ -364,14 +369,10 @@
     <div class="net-pay-panel">
         <div>
             <div class="net-pay-label">Net Payable Salary</div>
-            <div class="text-muted">Amount payable after statutory, advance, and other deductions</div>
+           
         </div>
         <div class="net-pay-amount">{{ payroll.net_payable }}</div>
     </div>
-
-    <p class="text-muted mb-0">
-        This payslip is system generated from salary and attendance records.
-    </p>
 
     <div class="signature-grid">
         <div class="signature-line">Prepared By</div>

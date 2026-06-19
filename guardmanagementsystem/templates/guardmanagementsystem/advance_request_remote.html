@@ -1,0 +1,73 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>{% if self_service_guard %}Request Advance{% else %}Remote Advance Request{% endif %}</h2>
+        <p>Submit a salary advance request for supervisor review.</p>
+    </div>
+    {% if not request.user.is_authenticated %}
+        <a href="{% url 'signin' %}" class="btn btn-outline-secondary">
+            <i class="fa fa-right-to-bracket"></i> Staff Sign In
+        </a>
+    {% endif %}
+</div>
+
+{% if submitted %}
+    <div class="form-card">
+        <div class="alert alert-success mb-3">
+            Your advance request was submitted successfully.
+        </div>
+        <p class="mb-1"><strong>Guard:</strong> {{ submitted.guard.guard_number }} - {{ submitted.guard.full_name }}</p>
+        <p class="mb-1"><strong>Amount:</strong> {{ submitted.amount }}</p>
+        <p class="mb-1"><strong>Status:</strong> {{ submitted.status }}</p>
+        <p class="mb-0 text-muted">{{ notification_message }}</p>
+        <a href="{% url 'advance_request_remote' %}" class="btn btn-primary mt-3">
+            Submit Another Request
+        </a>
+    </div>
+{% else %}
+    <div class="form-card">
+        <form method="POST" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            {% if self_service_guard %}
+                <div class="alert alert-info">
+                    <div class="fw-semibold mb-1">Guard details selected from your login</div>
+                    <div>{{ self_service_guard.guard_number }} - {{ self_service_guard.full_name }}</div>
+                    <div class="small">
+                        Supervisor:
+                        {% if self_service_guard.supervisor %}
+                            {{ self_service_guard.supervisor.full_name }}
+                        {% else %}
+                            Not assigned
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="row">
+                {% for field in form %}
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}
+                            <div class="text-danger small mt-1">{{ field.errors }}</div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="page-actions d-flex justify-content-end gap-2 mt-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa fa-paper-plane"></i> Submit Request
+                </button>
+            </div>
+        </form>
+    </div>
+{% endif %}
+{% endblock %}

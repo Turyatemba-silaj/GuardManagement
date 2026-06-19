@@ -2,18 +2,33 @@ from django.contrib import admin
 from .models import *
 
 
+@admin.register(RFIDCard)
+class RFIDCardAdmin(admin.ModelAdmin):
+    list_display = (
+        "rfid_card_id",
+        "card_uid",
+        "card_number",
+        "issue_date",
+        "status",
+    )
 
-from django.contrib import admin
-from .models import *
+    search_fields = (
+        "card_uid",
+        "card_number",
+    )
+
+    list_filter = (
+        "status",
+        "issue_date",
+    )
 
 
-# ============================================================
-# SUPERVISOR ADMIN
-# ============================================================
+
 @admin.register(Supervisor)
 class SupervisorAdmin(admin.ModelAdmin):
     list_display = (
         "supervisor_id",
+        "user",
         "full_name",
         "phone",
         "email",
@@ -33,7 +48,8 @@ class SupervisorAdmin(admin.ModelAdmin):
 class GuardAdmin(admin.ModelAdmin):
     list_display = (
         "guard_id",
-        "rfid_card_number",
+        "user",
+        "rfid_card",
         "full_name",
         "phone",
         "email",
@@ -44,6 +60,9 @@ class GuardAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
+        "user__username",
+        "rfid_card__card_uid",
+        "rfid_card__card_number",
         "rfid_card_number",
         "full_name",
         "phone",
@@ -77,6 +96,8 @@ class IoTDeviceAdmin(admin.ModelAdmin):
         "device_id",
         "device_name",
         "device_code",
+        "client",
+        "deployment",
         "site_location",
         "is_active",
     )
@@ -84,6 +105,8 @@ class IoTDeviceAdmin(admin.ModelAdmin):
     search_fields = (
         "device_name",
         "device_code",
+        "client__client_name",
+        "deployment__guard__full_name",
         "site_location",
     )
 
@@ -100,6 +123,7 @@ class IoTDeviceAdmin(admin.ModelAdmin):
 class ClientAdmin(admin.ModelAdmin):
     list_display = (
         "client_id",
+        "user",
         "client_name",
         "contact_person",
         "phone",
@@ -108,6 +132,7 @@ class ClientAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
+        "user__username",
         "client_name",
         "contact_person",
         "phone",
@@ -185,10 +210,13 @@ class AttendanceAdmin(admin.ModelAdmin):
         "check_in_time",
         "check_out_time",
         "status",
+        "swiped_by_supervisor",
     )
 
     search_fields = (
         "guard__full_name",
+        "swiped_by_supervisor__full_name",
+        "swiped_by_supervisor__supervisor_number",
     )
 
     list_filter = (

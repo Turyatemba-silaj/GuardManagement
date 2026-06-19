@@ -1,7 +1,7 @@
 from django import forms
 from django.db import models
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.models import Group, User
 from .models import*
 
 
@@ -29,12 +29,129 @@ class SignupForm(UserCreationForm):
         return user
 
 
+class UserCreateForm(UserCreationForm):
+    email = forms.EmailField(required=False)
+    first_name = forms.CharField(max_length=150, required=False)
+    last_name = forms.CharField(max_length=150, required=False)
+    is_active = forms.BooleanField(required=False, initial=True)
+    is_staff = forms.BooleanField(required=False)
+    is_superuser = forms.BooleanField(required=False)
+    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "role",
+            "password1",
+            "password2",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = Group.objects.filter(
+            name__in=[
+                "Admin",
+                "Supervisor",
+                "Guard",
+                "Client",
+            ]
+        ).order_by("name")
+        for field in self.fields.values():
+            field.widget.attrs.update({"class": "form-control"})
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.email = self.cleaned_data.get("email", "")
+        user.first_name = self.cleaned_data.get("first_name", "")
+        user.last_name = self.cleaned_data.get("last_name", "")
+        user.is_active = self.cleaned_data.get("is_active", False)
+        user.is_staff = self.cleaned_data.get("is_staff", False)
+        user.is_superuser = self.cleaned_data.get("is_superuser", False)
+        if commit:
+            user.save()
+            role = self.cleaned_data.get("role")
+            if role:
+                user.groups.set([role])
+        return user
+
+
+class UserEditForm(forms.ModelForm):
+    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=False)
+
+    class Meta:
+        model = User
+        fields = ["username", "first_name", "last_name", "email", "is_active", "is_staff", "is_superuser", "role"]
+        widgets = {
+            "username": forms.TextInput(attrs={"class": "form-control"}),
+            "first_name": forms.TextInput(attrs={"class": "form-control"}),
+            "last_name": forms.TextInput(attrs={"class": "form-control"}),
+            "email": forms.EmailInput(attrs={"class": "form-control"}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "is_staff": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "is_superuser": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = Group.objects.filter(
+            name__in=[
+                "Admin",
+                "Supervisor",
+                "Guard",
+                "Client",
+            ]
+        ).order_by("name")
+        self.fields["role"].widget.attrs.update({"class": "form-control"})
+        role = self.instance.groups.filter(name__in=self.fields["role"].queryset.values_list("name", flat=True)).first()
+        if role:
+            self.fields["role"].initial = role
+
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        if commit:
+            role = self.cleaned_data.get("role")
+            if role:
+                user.groups.set([role])
+            else:
+                user.groups.clear()
+        return user
+
+
+class EmailOrUsernameAuthenticationForm(AuthenticationForm):
+    def clean_username(self):
+        username = self.cleaned_data.get("username", "").strip()
+        if username and "@" in username:
+            email_users = User.objects.filter(email__iexact=username)
+            supervisor_user = email_users.filter(username__icontains="supervisor").first()
+            if supervisor_user:
+                return supervisor_user.username
+
+            if not User.objects.filter(username__iexact=username).exists():
+                user = email_users.first()
+                if user:
+                    return user.username
+        return username
+
+
 class GuardForm(forms.ModelForm):
     class Meta:
         model = Guard
-        fields = '__all__'
+        exclude = ['user', 'rfid_card_number']
 
         widgets = {
+            'rfid_card': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'supervisor': forms.Select(attrs={
+                'class': 'form-control'
+            }),
             'full_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter guard full name'
@@ -46,10 +163,6 @@ class GuardForm(forms.ModelForm):
             'phone': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter phone number'
-            }),
-            'rfid_card_number': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter RFID card number'
             }),
             'email': forms.EmailInput(attrs={
                 'class': 'form-control',
@@ -73,27 +186,80 @@ class GuardForm(forms.ModelForm):
                 'step': '0.01'
             }),
         }
-class IoTDeviceForm(forms.ModelForm):
+
+
+class RFIDCardForm(forms.ModelForm):
     class Meta:
-        model = IoTDevice
+        model = RFIDCard
         fields = '__all__'
 
         widgets = {
+            'card_uid': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter RFID card UID'
+            }),
+            'card_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter printed card number'
+            }),
+            'issue_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+        }
+
+
+class IoTDeviceForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['client'].queryset = Client.objects.order_by('client_name')
+        self.fields['deployment'].queryset = Deployment.objects.select_related('client', 'guard').order_by('client__client_name', 'site_location', 'guard__full_name')
+        self.fields['deployment'].label_from_instance = (
+            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location} - {deployment.guard.full_name}"
+        )
+        self.fields['device_name'].required = False
+        self.fields['device_code'].required = False
+        self.fields['api_key'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        client = cleaned_data.get('client')
+        deployment = cleaned_data.get('deployment')
+
+        if not deployment:
+            raise forms.ValidationError("Select a deployment so the device can pick its client and site.")
+
+        if client and deployment.client_id != client.client_id:
+            raise forms.ValidationError("Selected deployment does not belong to the selected client.")
+
+        cleaned_data['client'] = deployment.client
+        return cleaned_data
+
+    class Meta:
+        model = IoTDevice
+        fields = ['client', 'deployment', 'device_name', 'device_code', 'api_key', 'is_active']
+
+        widgets = {
+            'client': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'deployment': forms.Select(attrs={
+                'class': 'form-control'
+            }),
             'device_name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Example: Main Gate RFID Reader'
+                'placeholder': 'Auto-generated from client and location if blank'
             }),
             'device_code': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Example: GATE-001'
-            }),
-            'site_location': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter installed site location'
+                'placeholder': 'Auto-generated if blank'
             }),
             'api_key': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Simple secret key used by the device'
+                'placeholder': 'Auto-generated secure API key if blank'
             }),
             'is_active': forms.Select(attrs={
                 'class': 'form-control'
@@ -103,7 +269,7 @@ class IoTDeviceForm(forms.ModelForm):
 class SupervisorForm(forms.ModelForm):
     class Meta:
         model = Supervisor
-        fields = '__all__'
+        exclude = ['user']
 
         widgets = {
             'full_name': forms.TextInput(attrs={
@@ -135,6 +301,9 @@ class ClientForm(forms.ModelForm):
         fields ='__all__'
 
         widgets = {
+            'user': forms.Select(attrs={
+                'class': 'form-control'
+            }),
             'client_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter client name'
@@ -155,6 +324,35 @@ class ClientForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Enter client address',
                 'rows': 3
+            }),
+        }
+
+
+class ClientCommunicationForm(forms.ModelForm):
+    def __init__(self, *args, client=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if client:
+            self.instance.client = client
+
+    class Meta:
+        model = ClientCommunication
+        fields = ['message_type', 'subject', 'location', 'description']
+        widgets = {
+            'message_type': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'subject': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter subject'
+            }),
+            'location': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Site or location, if applicable'
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 5,
+                'placeholder': 'Describe the service request, complaint, feedback, incident, or message'
             }),
         }
 
@@ -227,6 +425,13 @@ class ProgramGuardForm(forms.ModelForm):
             'min': '1'
         })
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        active_guards = Guard.objects.filter(status="Active")
+        self.fields["guard"].queryset = active_guards
+        self.fields["reliever_guard"].queryset = active_guards
+        self.fields["additional_guards"].queryset = active_guards
 
     def clean(self):
         cleaned_data = super().clean()
@@ -629,18 +834,53 @@ class DisciplinaryActionForm(forms.ModelForm):
 
 
 class AdvanceRequestForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["installment_amount"].required = False
+        self.fields["recovery_period_months"].initial = 6
+
+    def clean_recovery_period_months(self):
+        return 6
+
     class Meta:
         model = AdvanceRequest
-        fields = '__all__'
+        fields = [
+            'guard',
+            'review_supervisor',
+            'amount',
+            'installment_amount',
+            'recovery_period_months',
+            'reason',
+            'status',
+            'approved_by',
+            'approved_date',
+            'approval_reason',
+            'rejection_reason',
+        ]
 
         widgets = {
             'guard': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'review_supervisor': forms.Select(attrs={
                 'class': 'form-control'
             }),
             'amount': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'step': '0.01',
                 'placeholder': 'Enter advance amount'
+            }),
+            'installment_amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'readonly': 'readonly',
+                'placeholder': 'Auto calculated as 20% of gross pay'
+            }),
+            'recovery_period_months': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '6',
+                'max': '6',
+                'readonly': 'readonly',
             }),
             'reason': forms.Textarea(attrs={
                 'class': 'form-control',
@@ -657,4 +897,89 @@ class AdvanceRequestForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date'
             }),
+            'approval_reason': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Required when approving an advance request'
+            }),
+            'rejection_reason': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Required when rejecting an advance request'
+            }),
         }
+
+
+class RemoteAdvanceRequestForm(forms.Form):
+    guard_number = forms.CharField(
+        max_length=20,
+        label="Guard Number",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Example: GUARD001"
+        })
+    )
+    phone = forms.CharField(
+        max_length=20,
+        label="Phone Number",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Enter the phone number on your guard profile"
+        })
+    )
+    amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={
+            "class": "form-control",
+            "step": "0.01",
+            "placeholder": "Enter requested advance amount"
+        })
+    )
+    reason = forms.CharField(
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 4,
+            "placeholder": "Explain why you need this salary advance"
+        })
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        guard_number = str(cleaned_data.get("guard_number") or "").strip()
+        phone = str(cleaned_data.get("phone") or "").strip()
+
+        guard = Guard.objects.filter(guard_number__iexact=guard_number, status="Active").first()
+        if not guard:
+            raise forms.ValidationError("No active guard was found with this guard number.")
+
+        if phone and str(guard.phone or "").strip() != phone:
+            raise forms.ValidationError("The phone number does not match this guard profile.")
+
+        if not guard.supervisor:
+            raise forms.ValidationError("This guard does not have an assigned supervisor for advance review.")
+
+        if not guard.supervisor.email:
+            raise forms.ValidationError("This guard's assigned supervisor does not have an email address for notifications.")
+
+        cleaned_data["guard"] = guard
+        return cleaned_data
+
+
+class GuardSelfAdvanceRequestForm(forms.Form):
+    amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={
+            "class": "form-control",
+            "step": "0.01",
+            "placeholder": "Enter requested advance amount"
+        })
+    )
+    reason = forms.CharField(
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 4,
+            "placeholder": "Explain why you need this salary advance"
+        })
+    )

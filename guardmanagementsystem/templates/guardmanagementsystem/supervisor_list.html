@@ -6,9 +6,11 @@
         <h2>Supervisors</h2>
         <p class="text-muted mb-0">Manage guard supervisors</p>
     </div>
-    <a href="{% url 'supervisor_add' %}" class="btn btn-primary">
-        <i class="fa fa-plus"></i> Add Supervisor
-    </a>
+    {% if nav_permissions.can_add_people_profiles %}
+        <a href="{% url 'supervisor_add' %}" class="btn btn-primary">
+            <i class="fa fa-plus"></i> Add Supervisor
+        </a>
+    {% endif %}
 </div>
 
 <div class="table-card">
@@ -16,9 +18,11 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Supervisors">
             <thead>
                 <tr>
-                    <th>Employee No.</th>
+                    <th>Supervisor ID.</th>
+                    <th>Supervisor No.</th>
                     <th>Name</th>
-                    <th>Assigned Guard</th>
+                    <th>Guard Profile</th>
+                    <th>Guards Supervised</th>
                     <th>Phone</th>
                     <th>Email</th>
                     <th>Designation</th>
@@ -29,9 +33,11 @@
             <tbody>
                 {% for supervisor in supervisors %}
                     <tr>
-                        <td>{{ supervisor.employee_number }}</td>
+                        <td>{{ supervisor.supervisor_id }}</td>
+                        <td>{{ supervisor.supervisor_number }}</td>
                         <td>{{ supervisor.full_name }}</td>
                         <td>{{ supervisor.guard_id }}</td>
+                        <td>{{ supervisor.supervised_guards.count }}</td>
                         <td>{{ supervisor.phone }}</td>
                         <td>{{ supervisor.email }}</td>
                         <td>{{ supervisor.designation }}</td>
@@ -49,7 +55,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No supervisors found.</td>
+                        <td colspan="10" class="text-center text-muted py-4">No supervisors found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

@@ -1,16 +1,17 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages 
 from django.core.mail import send_mail
+from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.contrib.auth import login, logout
-from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, SetPasswordForm
+from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractMonth
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -27,6 +28,7 @@ import xml.etree.ElementTree as ET
 from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from types import SimpleNamespace
 
 
 from .models import (
@@ -35,47 +37,42 @@ from .models import (
     Attendance,
     AuditLog,
     Client,
+    ClientCommunication,
     Deployment,
     DisciplinaryAction,
     Guard,
     Incident,
     IoTDevice,
+    RFIDCard,
     Salary,
     Shift,
     Supervisor,
     recompute_guard_salary_for_month,
 )
+from .role_access import user_can_access
 from .forms import (
     AdvanceRequestForm,
     AssetForm,
     AttendanceForm,
     ClientForm,
+    ClientCommunicationForm,
     DeploymentForm,
     DisciplinaryActionForm,
+    EmailOrUsernameAuthenticationForm,
+    GuardSelfAdvanceRequestForm,
     GuardForm,
     IncidentForm,
     IoTDeviceForm,
     ProgramGuardForm,
+    RemoteAdvanceRequestForm,
+    RFIDCardForm,
     SalaryForm,
     ShiftForm,
     SignupForm,
     SupervisorForm,
+    UserCreateForm,
+    UserEditForm,
 )
-
-
-# MVT DESIGN FOR ACADEMIC DEFENSE
-# Model: database classes imported from models.py.
-# View: function-based views in this file receive requests and return responses.
-# Template: HTML files in templates/ display the data sent by these views.
-#
-# The normal database screens use a simple pattern:
-# 1. list records
-# 2. add a record
-# 3. edit a record
-# 4. delete a record
-#
-# Longer custom functions are kept only where the system needs special behavior:
-# reports, imports, attendance controls, PDFs, payroll, authentication, and IoT.
 
 MONEY_PLACES = Decimal("0.01")
 MONTH_NUMBERS = {
@@ -94,9 +91,6 @@ MONTH_NUMBERS = {
 }
 
 
-# -------------------------------------------------------------------
-# GENERAL HELPER FUNCTIONS
-# -------------------------------------------------------------------
 def money(value):
     return Decimal(value or 0).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
 
@@ -211,9 +205,6 @@ def build_simple_pdf(title, sections):
     return bytes(pdf)
 
 
-# -------------------------------------------------------------------
-# PUBLIC AND AUTHENTICATION VIEWS
-# -------------------------------------------------------------------
 def welcome(request):
     return render(request, "guardmanagementsystem/welcome.html")
 
@@ -260,17 +251,32 @@ def signup(request):
     })
 
 
+def user_home_url_name(user):
+    if user_is_guard(user):
+        return "iot_swipe_attendance"
+    if get_user_client(user):
+        return "client_communication_list"
+    if user_can_access(user, "dashboard"):
+        return "dashboard"
+    return "advance_request_list"
+
+
 def signin(request):
+    if request.user.is_authenticated and request.method == "GET":
+        return redirect(user_home_url_name(request.user))
+
     if request.method == "POST":
-        form = AuthenticationForm(request, data=request.POST)
+        form = EmailOrUsernameAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
             log_action(request, "SIGNIN", "User signed in.")
+            if get_user_supervisor(user):
+                record_supervisor_login_attendance(user)
             messages.success(request, "Signed in successfully.")
-            return redirect("dashboard")
+            return redirect(user_home_url_name(user))
     else:
-        form = AuthenticationForm()
+        form = EmailOrUsernameAuthenticationForm()
 
     for field in form.fields.values():
         field.widget.attrs.update({"class": "form-control"})
@@ -371,10 +377,6 @@ def reset_password(request, uidb64, token):
         "helper_text": "Back to sign in"
     })
 
-
-# -------------------------------------------------------------------
-# BUSINESS HELPER FUNCTIONS USED BY THE FUNCTION-BASED VIEWS
-# -------------------------------------------------------------------
 def send_incident_notification(incident):
     supervisor = incident.reported_by
 
@@ -450,7 +452,171 @@ def get_matching_deployment(guard, work_date, site=None, client_name=None):
     return deployments.first()
 
 
-def record_iot_attendance(card_id, site_location, action="check_in"):
+def get_or_create_deployment_for_schedule(guard, client, site_location, start_date, end_date):
+    deployment = Deployment.objects.filter(
+        guard=guard,
+        client=client,
+        site_location=site_location,
+        start_date=start_date,
+        end_date=end_date,
+    ).order_by("-deployment_id").first()
+
+    if deployment:
+        created = False
+    else:
+        deployment = Deployment.objects.create(
+            guard=guard,
+            client=client,
+            site_location=site_location,
+            start_date=start_date,
+            end_date=end_date,
+            status="Active",
+        )
+        created = True
+
+    if deployment.status != "Active":
+        deployment.status = "Active"
+        deployment.save(update_fields=["status"])
+
+    return deployment, created
+
+
+def recent_attendance_records():
+    return Attendance.objects.select_related(
+        "guard",
+        "guard__supervisor",
+        "replacement_guard",
+        "replacement_guard__supervisor",
+        "swiped_by_supervisor",
+    ).filter(
+        Q(check_in_time__isnull=False) | Q(check_out_time__isnull=False)
+    ).order_by("-attendance_date", "-check_out_time", "-check_in_time", "-attendance_id")
+
+
+def build_recent_attendance_salary_rows(guard_id=None, year=None, month=None):
+    salary_rows_by_guard_month = {}
+    guard_id = str(guard_id or "").strip()
+    year = clean_schedule_period_value(year, 0) if year else None
+    month = clean_schedule_period_value(month, 0) if month else None
+
+    for attendance in recent_attendance_records().order_by("attendance_date"):
+        earning_guard = attendance.replacement_guard or attendance.guard
+        if guard_id and str(earning_guard.guard_id) != guard_id:
+            continue
+
+        if year and attendance.attendance_date.year != year:
+            continue
+
+        if month and attendance.attendance_date.month != month:
+            continue
+
+        key = (earning_guard.guard_id, attendance.attendance_date.year, attendance.attendance_date.month)
+
+        if key not in salary_rows_by_guard_month:
+            salary_rows_by_guard_month[key] = SimpleNamespace(
+                salary_id=f"ATT-{earning_guard.guard_id}-{attendance.attendance_date.year}-{attendance.attendance_date.month:02d}",
+                attendance_payslip=True,
+                guard_id=earning_guard.guard_id,
+                month_number=attendance.attendance_date.month,
+                employee_type="Guard",
+                guard=earning_guard,
+                supervisor=None,
+                employee=earning_guard,
+                employee_number=earning_guard.guard_number,
+                month=attendance.attendance_date.strftime("%B"),
+                year=attendance.attendance_date.year,
+                attendance_days=0,
+                daily_rate=earning_guard.daily_rate,
+                basic_pay=money(0),
+                allowances=money(0),
+                deductions=money(0),
+                net_pay=money(0),
+                payment_date=attendance.attendance_date,
+                first_attendance_date=attendance.attendance_date,
+                last_attendance_date=attendance.attendance_date,
+                last_swipe_time=attendance.check_out_time or attendance.check_in_time,
+            )
+
+        salary_row = salary_rows_by_guard_month[key]
+        salary_row.attendance_days += 1
+        salary_row.basic_pay = money(salary_row.attendance_days * salary_row.daily_rate)
+        salary_row.net_pay = money(salary_row.basic_pay + salary_row.allowances - salary_row.deductions)
+        salary_row.payment_date = max(salary_row.payment_date, attendance.attendance_date)
+        salary_row.first_attendance_date = min(salary_row.first_attendance_date, attendance.attendance_date)
+        salary_row.last_attendance_date = max(salary_row.last_attendance_date, attendance.attendance_date)
+        salary_row.last_swipe_time = attendance.check_out_time or attendance.check_in_time or salary_row.last_swipe_time
+
+    return sorted(
+        salary_rows_by_guard_month.values(),
+        key=lambda salary: (salary.year, salary.payment_date, str(salary.employee)),
+        reverse=True,
+    )
+
+
+def user_is_guard(user):
+    return user.is_authenticated and user.groups.filter(name="Guard").exists()
+
+
+def get_user_guard(user):
+    if not user.is_authenticated:
+        return None
+    return Guard.objects.filter(user=user).first()
+
+
+def get_user_client(user):
+    if not user.is_authenticated:
+        return None
+    return Client.objects.filter(user=user).first()
+
+
+def get_user_supervisor(user):
+    if not user.is_authenticated:
+        return None
+    return Supervisor.objects.filter(user=user).first()
+
+
+def record_supervisor_login_attendance(user):
+    supervisor = get_user_supervisor(user)
+    if not supervisor or not supervisor.guard_id:
+        return None
+
+    today = timezone.localdate()
+    current_time = timezone.localtime().time()
+    attendance, created = Attendance.objects.get_or_create(
+        guard=supervisor.guard_id,
+        attendance_date=today,
+        defaults={
+            "status": "Present",
+            "check_in_time": current_time,
+            "swiped_by_supervisor": supervisor,
+            "absence_reason": "Supervisor login attendance",
+        },
+    )
+
+    update_fields = []
+    if not attendance.check_in_time:
+        attendance.check_in_time = current_time
+        update_fields.append("check_in_time")
+
+    if attendance.status != "Present":
+        attendance.status = "Present"
+        update_fields.append("status")
+
+    if attendance.swiped_by_supervisor_id != supervisor.supervisor_id:
+        attendance.swiped_by_supervisor = supervisor
+        update_fields.append("swiped_by_supervisor")
+
+    if attendance.absence_reason != "Supervisor login attendance":
+        attendance.absence_reason = "Supervisor login attendance"
+        update_fields.append("absence_reason")
+
+    if update_fields:
+        attendance.save(update_fields=update_fields)
+
+    return attendance
+
+
+def record_iot_attendance(card_id, site_location, action="check_in", replacement_guard_id=None, swiped_by_supervisor_id=None):
     card_id = str(card_id or "").strip()
     site_location = str(site_location or "").strip()
     action = str(action or "check_in").strip().lower()
@@ -461,12 +627,28 @@ def record_iot_attendance(card_id, site_location, action="check_in"):
     if not site_location:
         return False, "Site location is required.", None
 
-    guard = Guard.objects.filter(rfid_card_number=card_id).first()
+    guard = Guard.objects.filter(
+        Q(rfid_card__card_uid=card_id) |
+        Q(rfid_card__card_number=card_id) |
+        Q(rfid_card_number=card_id)
+    ).select_related("rfid_card", "supervisor").first()
     if not guard:
         return False, "No guard is registered with this RFID card.", None
 
+    if guard.rfid_card and guard.rfid_card.status != "Active":
+        return False, "This RFID card is not active.", None
+
     if guard.status != "Active":
         return False, "This guard is not active.", None
+
+    swiped_by_supervisor = None
+    if swiped_by_supervisor_id:
+        swiped_by_supervisor = Supervisor.objects.filter(supervisor_id=swiped_by_supervisor_id).first()
+        if not swiped_by_supervisor:
+            return False, "Select a valid supervisor.", None
+
+        if guard.supervisor_id != swiped_by_supervisor.supervisor_id:
+            return False, f"{swiped_by_supervisor.full_name} is not assigned to supervise {guard.full_name}.", None
 
     today = timezone.localdate()
     current_time = timezone.localtime().time()
@@ -474,17 +656,44 @@ def record_iot_attendance(card_id, site_location, action="check_in"):
     if not has_active_deployment(guard, today, site_location):
         return False, "Guard is not actively deployed at this site today.", None
 
+    if action in ["mark_absent", "absent", "replace"]:
+        replacement_guard = Guard.objects.select_related("supervisor").filter(guard_id=replacement_guard_id, status="Active").first()
+        if not replacement_guard:
+            return False, "Select an active replacement guard.", None
+
+        if replacement_guard == guard:
+            return False, "Replacement guard cannot be the same as the absent assigned RFID guard.", None
+
+        if swiped_by_supervisor and replacement_guard.supervisor_id != swiped_by_supervisor.supervisor_id:
+            return False, f"{swiped_by_supervisor.full_name} is not assigned to supervise replacement guard {replacement_guard.full_name}.", None
+
+        attendance, _ = Attendance.objects.get_or_create(
+            guard=guard,
+            attendance_date=today,
+            defaults={"status": "Present"},
+        )
+        attendance.status = "Absent"
+        attendance.replacement_guard = replacement_guard
+        attendance.swiped_by_supervisor = swiped_by_supervisor
+        attendance.absence_reason = "Assigned RFID absent - replaced via IoT"
+        attendance.check_in_time = current_time
+        attendance.save()
+        return True, f"{guard.full_name} marked absent. Replacement recorded for {replacement_guard.full_name}.", attendance
+
     attendance, created = Attendance.objects.get_or_create(
         guard=guard,
         attendance_date=today,
         defaults={
             "status": "Present",
             "check_in_time": current_time,
+            "swiped_by_supervisor": swiped_by_supervisor,
         },
     )
 
     if action == "check_out":
         attendance.check_out_time = current_time
+        if swiped_by_supervisor:
+            attendance.swiped_by_supervisor = swiped_by_supervisor
         attendance.save()
         return True, f"Check-out recorded for {guard.full_name}.", attendance
 
@@ -494,8 +703,13 @@ def record_iot_attendance(card_id, site_location, action="check_in"):
     if not attendance.check_in_time:
         attendance.check_in_time = current_time
         attendance.status = "Present"
+        attendance.swiped_by_supervisor = swiped_by_supervisor
         attendance.save()
         return True, f"Check-in recorded for {guard.full_name}.", attendance
+
+    if swiped_by_supervisor and attendance.swiped_by_supervisor_id != swiped_by_supervisor.supervisor_id:
+        attendance.swiped_by_supervisor = swiped_by_supervisor
+        attendance.save(update_fields=["swiped_by_supervisor"])
 
     return True, f"{guard.full_name} already has attendance for today.", attendance
 
@@ -1020,9 +1234,6 @@ def build_scheduled_guard_report(deployment_area="", site="", start_date="", end
     }
 
 
-# -------------------------------------------------------------------
-# REPORT AND IMPORT FUNCTION-BASED VIEWS
-# -------------------------------------------------------------------
 @login_required
 def shift_import(request):
     if request.method == "POST":
@@ -1092,18 +1303,13 @@ def shift_import(request):
                     continue
 
                 deployment_start, deployment_end = schedule_month_bounds(shift_date)
-                deployment, deployment_created = Deployment.objects.get_or_create(
-                    guard=guard,
-                    client=client,
-                    site_location=site_location,
-                    start_date=deployment_start,
-                    end_date=deployment_end,
-                    defaults={"status": "Active"},
+                deployment, deployment_created = get_or_create_deployment_for_schedule(
+                    guard,
+                    client,
+                    site_location,
+                    deployment_start,
+                    deployment_end,
                 )
-
-                if deployment.status != "Active":
-                    deployment.status = "Active"
-                    deployment.save(update_fields=["status"])
 
                 if deployment_created:
                     deployment_created_count += 1
@@ -1283,7 +1489,7 @@ def schedule_csv_template(request):
 
 @login_required
 def attendance_query_report(request):
-    employee_number = request.GET.get("employee_number", "")
+    employee_number = request.GET.get("employee_number", "").strip()
     start_date = request.GET.get("start_date", "")
     end_date = request.GET.get("end_date", "")
 
@@ -1291,7 +1497,7 @@ def attendance_query_report(request):
 
     if employee_number:
         attendances = attendances.filter(
-            Q(guard__guard_id__icontains=employee_number) |
+            Q(guard__guard_number__icontains=employee_number) |
             Q(guard__full_name__icontains=employee_number)
         )
 
@@ -1349,20 +1555,11 @@ def dashboard(request):
         .annotate(total=Count("incident_id"))
         .values_list("month", "total")
     )
-    attendance_counts = dict(
-        Attendance.objects.filter(attendance_date__year=current_year)
-        .annotate(month=ExtractMonth("attendance_date"))
-        .values("month")
-        .annotate(total=Count("attendance_id"))
-        .values_list("month", "total")
-    )
-
     total_supervisors = Supervisor.objects.count()
     total_guards = Guard.objects.count()
     total_clients = Client.objects.count()
     total_deployments = Deployment.objects.count()
     total_assets = Asset.objects.count()
-    total_attendance = Attendance.objects.count()
     total_shifts = Shift.objects.count()
     total_salaries = Salary.objects.count()
     total_incidents = Incident.objects.count()
@@ -1375,7 +1572,6 @@ def dashboard(request):
         "total_clients": total_clients,
         "total_deployments": total_deployments,
         "total_assets": total_assets,
-        "total_attendance": total_attendance,
         "total_shifts": total_shifts,
         "total_salaries": total_salaries,
         "total_incidents": total_incidents,
@@ -1389,7 +1585,6 @@ def dashboard(request):
             "Clients",
             "Deployments",
             "Assets",
-            "Attendance",
             "Shifts",
             "Salaries",
             "Incidents",
@@ -1403,7 +1598,6 @@ def dashboard(request):
             total_clients,
             total_deployments,
             total_assets,
-            total_attendance,
             total_shifts,
             total_salaries,
             total_incidents,
@@ -1412,7 +1606,6 @@ def dashboard(request):
         ],
         "month_labels": month_labels,
         "monthly_incidents": [incident_counts.get(month, 0) for month in range(1, 13)],
-        "monthly_attendance": [attendance_counts.get(month, 0) for month in range(1, 13)],
     }
 
     return render(request, "guardmanagementsystem/dashboard.html", context)
@@ -1426,10 +1619,73 @@ def audit_log_list(request):
     })
 
 
-# -------------------------------------------------------------------
-# SIMPLE CRUD HELPER FUNCTIONS
-# These keep normal pages easy to explain: list, add, edit, delete.
-# -------------------------------------------------------------------
+@login_required
+def user_list(request):
+    users = User.objects.order_by("username")
+    return render(request, "guardmanagementsystem/user_list.html", {
+        "users": users
+    })
+
+
+@login_required
+def user_add(request):
+    if request.method == "POST":
+        form = UserCreateForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            log_action(request, "CREATE", f"Created user account {user.username}.")
+            messages.success(request, "User account added successfully.")
+            return redirect("user_list")
+    else:
+        form = UserCreateForm()
+
+    return render(request, "guardmanagementsystem/form.html", {
+        "form": form,
+        "title": "Add User",
+        "button_text": "Create User",
+    })
+
+
+@login_required
+def user_edit(request, id):
+    user = get_object_or_404(User, pk=id)
+
+    if request.method == "POST":
+        form = UserEditForm(request.POST, instance=user)
+        if form.is_valid():
+            updated_user = form.save()
+            log_action(request, "UPDATE", f"Updated user account {updated_user.username}.")
+            messages.success(request, "User account updated successfully.")
+            return redirect("user_list")
+    else:
+        form = UserEditForm(instance=user)
+
+    return render(request, "guardmanagementsystem/form.html", {
+        "form": form,
+        "title": "Edit User",
+    })
+
+
+@login_required
+def user_delete(request, id):
+    user = get_object_or_404(User, pk=id)
+
+    if user == request.user:
+        messages.error(request, "You cannot delete the account you are currently using.")
+        return redirect("user_list")
+
+    if request.method == "POST":
+        username = user.username
+        user.delete()
+        log_action(request, "DELETE", f"Deleted user account {username}.")
+        messages.success(request, "User account deleted successfully.")
+        return redirect("user_list")
+
+    return render(request, "guardmanagementsystem/delete.html", {
+        "object": user,
+        "title": "Delete User"
+    })
+
 def show_records(request, queryset, template_name, context_name):
     return render(request, template_name, {
         context_name: queryset
@@ -1516,9 +1772,7 @@ def delete_record(request, model_class, lookup, title, redirect_name, success_me
     })
 
 
-# -------------------------------------------------------------------
-# MAIN RECORD FUNCTION-BASED VIEWS
-# -------------------------------------------------------------------
+
 @login_required
 def guard_list(request):
     return show_records(request, Guard.objects.all(), "guardmanagementsystem/guard_list.html", "guards")
@@ -1537,6 +1791,52 @@ def guard_edit(request, id):
 @login_required
 def guard_delete(request, id):
     return delete_record(request, Guard, {"guard_id": id}, "Delete Guard", "guard_list", "Guard deleted successfully")
+
+
+@login_required
+def rfid_card_list(request):
+    return show_records(request, RFIDCard.objects.all(), "guardmanagementsystem/rfid_card_list.html", "rfid_cards")
+
+
+@login_required
+def rfid_card_add(request):
+    return add_record(request, RFIDCardForm, "Add RFID Card", "rfid_card_list", "RFID card added successfully")
+
+
+@login_required
+def rfid_card_edit(request, id):
+    return edit_record(request, RFIDCard, RFIDCardForm, {"rfid_card_id": id}, "Edit RFID Card", "rfid_card_list", "RFID card updated successfully")
+
+
+@login_required
+def rfid_card_delete(request, id):
+    return delete_record(request, RFIDCard, {"rfid_card_id": id}, "Delete RFID Card", "rfid_card_list", "RFID card deleted successfully")
+
+
+@login_required
+def rfid_card_deactivate(request, id):
+    card = get_object_or_404(RFIDCard, rfid_card_id=id)
+    card.status = "Inactive"
+    card.save(update_fields=["status"])
+    log_action(request, "UPDATE", f"Remotely deactivated RFID card {card.card_number}.")
+    messages.success(request, f"RFID card {card.card_number} deactivated remotely.")
+    return redirect("rfid_card_list")
+
+
+@login_required
+def rfid_card_activate(request, id):
+    card = get_object_or_404(RFIDCard, rfid_card_id=id)
+    assigned_guard = Guard.objects.filter(rfid_card=card).first()
+
+    if assigned_guard and assigned_guard.status != "Active":
+        messages.error(request, "Cannot activate this RFID card because the assigned guard is not active.")
+        return redirect("rfid_card_list")
+
+    card.status = "Active"
+    card.save(update_fields=["status"])
+    log_action(request, "UPDATE", f"Remotely activated RFID card {card.card_number}.")
+    messages.success(request, f"RFID card {card.card_number} activated.")
+    return redirect("rfid_card_list")
 
 
 @login_required
@@ -1576,6 +1876,127 @@ def client_edit(request, id):
 @login_required
 def client_delete(request, id):
     return delete_record(request, Client, {"client_id": id}, "Delete Client", "client_list", "Client deleted successfully")
+
+
+def send_client_communication_notification(request, communication):
+    supervisor = communication.review_supervisor
+    if not supervisor or not supervisor.email:
+        return False, "Supervisor notification is available in the portal."
+
+    review_url = request.build_absolute_uri("/client-communications/")
+    subject = f"Client {communication.message_type}: {communication.subject}"
+    message = "\n".join([
+        "A client communication has been submitted.",
+        "",
+        f"Client: {communication.client.client_name}",
+        f"Type: {communication.message_type}",
+        f"Subject: {communication.subject}",
+        f"Location: {communication.location or '-'}",
+        f"Description: {communication.description}",
+        "",
+        f"Review it here: {review_url}",
+    ])
+
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [supervisor.email],
+        fail_silently=False,
+    )
+    return True, f"Notification sent to {supervisor.full_name}."
+
+
+@login_required
+def client_communication_list(request):
+    current_client = get_user_client(request.user)
+    supervisor = Supervisor.objects.filter(user=request.user).first()
+    communications = ClientCommunication.objects.select_related("client", "review_supervisor")
+
+    if current_client and not request.user.is_superuser:
+        communications = communications.filter(client=current_client)
+    elif supervisor and not request.user.is_superuser:
+        communications = communications.filter(review_supervisor=supervisor)
+
+    communications = communications.order_by("-submitted_at", "-communication_id")
+    return render(request, "guardmanagementsystem/client_communication_list.html", {
+        "communications": communications,
+        "self_service_client": current_client,
+        "review_supervisor": supervisor,
+        "communication_status_choices": ClientCommunication.STATUS_CHOICES,
+    })
+
+
+@login_required
+def client_communication_add(request):
+    current_client = get_user_client(request.user)
+    if not current_client:
+        messages.error(request, "Only a linked client user can submit client communication.")
+        return redirect("client_communication_list")
+
+    submitted = None
+    notification_message = ""
+    if request.method == "POST":
+        form = ClientCommunicationForm(request.POST, client=current_client)
+        if form.is_valid():
+            submitted = form.save(commit=False)
+            submitted.client = current_client
+            submitted.status = "Pending"
+            try:
+                submitted.full_clean()
+                submitted.save()
+                log_action(request, "CREATE", f"Submitted client communication {submitted.communication_id}.")
+                try:
+                    _, notification_message = send_client_communication_notification(request, submitted)
+                except Exception as exc:
+                    notification_message = f"Request submitted, but email notification could not be sent: {exc}"
+                messages.success(request, "Your communication was submitted to the supervisor.")
+                return redirect("client_communication_list")
+            except ValidationError as exc:
+                submitted = None
+                form.add_error(None, exc)
+    else:
+        form = ClientCommunicationForm(client=current_client)
+
+    return render(request, "guardmanagementsystem/client_communication_form.html", {
+        "form": form,
+        "title": "Submit Client Communication",
+        "self_service_client": current_client,
+        "notification_message": notification_message,
+    })
+
+
+@login_required
+def client_communication_update(request, id):
+    communication = get_object_or_404(
+        ClientCommunication.objects.select_related("client", "review_supervisor"),
+        communication_id=id,
+    )
+
+    if request.method != "POST":
+        return redirect("client_communication_list")
+
+    supervisor = Supervisor.objects.filter(user=request.user).first()
+    if supervisor and communication.review_supervisor_id != supervisor.supervisor_id:
+        messages.error(request, "Only the assigned supervisor can update this client communication.")
+        return redirect("client_communication_list")
+
+    if not supervisor and not request.user.is_superuser:
+        messages.error(request, "Only supervisors can update client communication.")
+        return redirect("client_communication_list")
+
+    status = request.POST.get("status")
+    if status not in dict(ClientCommunication.STATUS_CHOICES):
+        messages.error(request, "Select a valid status.")
+        return redirect("client_communication_list")
+
+    communication.status = status
+    communication.supervisor_response = str(request.POST.get("supervisor_response") or "").strip()
+    communication.reviewed_at = timezone.now()
+    communication.save(update_fields=["status", "supervisor_response", "reviewed_at", "review_supervisor"])
+    log_action(request, "UPDATE", f"Updated client communication {communication.communication_id}.")
+    messages.success(request, "Client communication updated successfully.")
+    return redirect("client_communication_list")
 
 @login_required
 def deployment_list(request):
@@ -1695,23 +2116,24 @@ def program_guard(request):
                 messages.error(request, "Enter at least one scheduled duty day using D, N, D/N, or PH.")
             else:
                 with transaction.atomic():
-                    deployment = form.save(commit=False)
-                    deployment.status = "Active"
-                    deployment.save()
+                    submitted_deployment = form.save(commit=False)
+                    deployment, _ = get_or_create_deployment_for_schedule(
+                        submitted_deployment.guard,
+                        submitted_deployment.client,
+                        submitted_deployment.site_location,
+                        submitted_deployment.start_date,
+                        submitted_deployment.end_date,
+                    )
                     deployment_by_guard = {deployment.guard_id: deployment}
 
                     for guard in [*regular_guards, reliever_guard]:
-                        guard_deployment, _ = Deployment.objects.get_or_create(
-                            guard=guard,
-                            client=deployment.client,
-                            site_location=deployment.site_location,
-                            start_date=deployment.start_date,
-                            end_date=deployment.end_date,
-                            defaults={"status": "Active"},
+                        guard_deployment, _ = get_or_create_deployment_for_schedule(
+                            guard,
+                            deployment.client,
+                            deployment.site_location,
+                            deployment.start_date,
+                            deployment.end_date,
                         )
-                        if guard_deployment.status != "Active":
-                            guard_deployment.status = "Active"
-                            guard_deployment.save(update_fields=["status"])
                         deployment_by_guard[guard.guard_id] = guard_deployment
 
                     created_shifts = 0
@@ -1885,18 +2307,108 @@ def iot_device_delete(request, id):
 
 @login_required
 def iot_swipe_attendance(request):
+    current_guard = get_user_guard(request.user)
     devices = IoTDevice.objects.filter(is_active=True).order_by("site_location", "device_name")
-    recent_attendances = Attendance.objects.select_related("guard").order_by("-attendance_date", "-attendance_id")[:10]
+    site_locations = (
+        Deployment.objects.exclude(site_location="")
+        .values_list("site_location", flat=True)
+        .distinct()
+        .order_by("site_location")
+    )
+    supervisors = Supervisor.objects.order_by("supervisor_number", "full_name")
+    rfid_cards = list(RFIDCard.objects.filter(status="Active").order_by("card_number"))
+    recent_attendances = recent_attendance_records()
+    if current_guard:
+        recent_attendances = recent_attendances.filter(
+            Q(guard=current_guard) | Q(replacement_guard=current_guard)
+        )
+    recent_attendances = recent_attendances[:10]
+    card_ids = [card.rfid_card_id for card in rfid_cards]
+    guard_by_card_id = {
+        guard.rfid_card_id: guard
+        for guard in Guard.objects.select_related("supervisor").filter(rfid_card_id__in=card_ids)
+    }
+
+    for card in rfid_cards:
+        assigned_guard = guard_by_card_id.get(card.rfid_card_id)
+        supervisor = assigned_guard.supervisor if assigned_guard else None
+        card.assigned_supervisor_id = supervisor.supervisor_id if supervisor else ""
+        if supervisor:
+            guard_label = assigned_guard.guard_number or assigned_guard.full_name
+            card.swipe_label = f"{card.card_number} - {guard_label} supervised by {supervisor.full_name}"
+        elif assigned_guard:
+            card.swipe_label = f"{card.card_number} - Guard {assigned_guard.full_name}"
+        else:
+            card.swipe_label = f"{card.card_number} - Unassigned"
+
+    for attendance in recent_attendances:
+        earning_guard = attendance.replacement_guard or attendance.guard
+        supervisor = attendance.swiped_by_supervisor or earning_guard.supervisor
+        is_supervisor_login_attendance = (
+            supervisor
+            and attendance.guard_id == supervisor.guard_id_id
+            and attendance.absence_reason == "Supervisor login attendance"
+        )
+
+        if supervisor:
+            attendance.employee_label = f"{supervisor.supervisor_number or '-'} - {supervisor.full_name}"
+        else:
+            attendance.employee_label = "-"
+
+        if is_supervisor_login_attendance:
+            attendance.guard_profile_label = f"{supervisor.supervisor_number or '-'} - {supervisor.full_name}"
+        else:
+            attendance.guard_profile_label = f"{earning_guard.guard_number or '-'} - {earning_guard.full_name}"
+
+        deployment = get_matching_deployment(attendance.guard, attendance.attendance_date)
+        attendance.client_label = deployment.client.client_name if deployment else "-"
+        if is_supervisor_login_attendance:
+            attendance.status_label = "Supervisor Login"
+        else:
+            attendance.status_label = f"Replacement for {attendance.guard.full_name}" if attendance.replacement_guard else attendance.status
+        attendance.payroll_guard_id = earning_guard.guard_id
+        attendance.payroll_year = attendance.attendance_date.year
+        attendance.payroll_month = attendance.attendance_date.month
 
     if request.method == "POST":
+        if current_guard:
+            messages.error(request, "Guards can view swipe attendance only.")
+            return redirect("iot_swipe_attendance")
+
         device = IoTDevice.objects.filter(device_id=request.POST.get("device")).first()
+        current_site = str(request.POST.get("site_location") or "").strip()
         card_id = request.POST.get("card_id")
         action = request.POST.get("action", "check_in")
+        replacement_card_id = request.POST.get("replacement_card_id")
+        swiped_by_supervisor_id = request.POST.get("swiped_by_supervisor")
+        replacement_guard_id = None
+
+        if not swiped_by_supervisor_id:
+            messages.error(request, "Select the supervisor recording this RFID swipe.")
+            return redirect("iot_swipe_attendance")
+
+        if action in ["mark_absent", "absent", "replace"] and replacement_card_id == card_id:
+            messages.error(request, "Replacement RFID card cannot be the same as the absent assigned RFID card.")
+            return redirect("iot_swipe_attendance")
+
+        if replacement_card_id:
+            replacement_guard = Guard.objects.filter(
+                Q(rfid_card__card_uid=replacement_card_id) |
+                Q(rfid_card__card_number=replacement_card_id) |
+                Q(rfid_card_number=replacement_card_id)
+            ).first()
+            replacement_guard_id = replacement_guard.guard_id if replacement_guard else None
 
         if not device:
             messages.error(request, "Select an active IoT device.")
         else:
-            success, message, _ = record_iot_attendance(card_id, device.site_location, action)
+            success, message, _ = record_iot_attendance(
+                card_id,
+                current_site or device.site_location,
+                action,
+                replacement_guard_id,
+                swiped_by_supervisor_id,
+            )
             if success:
                 messages.success(request, message)
             else:
@@ -1906,7 +2418,11 @@ def iot_swipe_attendance(request):
 
     return render(request, "guardmanagementsystem/iot_swipe_attendance.html", {
         "devices": devices,
+        "site_locations": site_locations,
+        "supervisors": supervisors,
+        "rfid_cards": rfid_cards,
         "recent_attendances": recent_attendances,
+        "self_service_guard": current_guard,
     })
 
 
@@ -1932,7 +2448,24 @@ def iot_attendance_api(request):
     device_code = str(payload.get("device_code", "")).strip()
     api_key = str(payload.get("api_key", "")).strip()
     card_id = payload.get("card_id") or payload.get("rfid_card_number")
+    current_site = str(payload.get("site_location") or payload.get("site") or payload.get("location") or "").strip()
     action = payload.get("action", "check_in")
+    supervisor_id = payload.get("supervisor_id") or payload.get("swiped_by_supervisor_id")
+    supervisor_number = payload.get("supervisor_number") or payload.get("swiped_by_supervisor_number")
+    replacement_guard_id = payload.get("replacement_guard_id")
+    replacement_card_id = payload.get("replacement_card_id") or payload.get("replacement_rfid_card_number")
+
+    if supervisor_number and not supervisor_id:
+        supervisor = Supervisor.objects.filter(supervisor_number=supervisor_number).first()
+        supervisor_id = supervisor.supervisor_id if supervisor else None
+
+    if replacement_card_id and not replacement_guard_id:
+        replacement_guard = Guard.objects.filter(
+            Q(rfid_card__card_uid=replacement_card_id) |
+            Q(rfid_card__card_number=replacement_card_id) |
+            Q(rfid_card_number=replacement_card_id)
+        ).first()
+        replacement_guard_id = replacement_guard.guard_id if replacement_guard else None
 
     device = IoTDevice.objects.filter(
         device_code=device_code,
@@ -1946,17 +2479,23 @@ def iot_attendance_api(request):
             "message": "Invalid or inactive IoT device."
         }, status=403)
 
-    success, message, attendance = record_iot_attendance(card_id, device.site_location, action)
+    site_location = current_site or device.site_location
+    success, message, attendance = record_iot_attendance(card_id, site_location, action, replacement_guard_id, supervisor_id)
     data = {
         "success": success,
         "message": message,
         "device": device.device_code,
-        "site_location": device.site_location,
+        "site_location": site_location,
     }
 
     if attendance:
+        deployment = get_matching_deployment(attendance.guard, attendance.attendance_date)
         data.update({
             "guard": attendance.guard.full_name,
+            "guard_number": attendance.guard.guard_number,
+            "client": deployment.client.client_name if deployment else None,
+            "supervisor": attendance.swiped_by_supervisor.full_name if attendance.swiped_by_supervisor else None,
+            "supervisor_number": attendance.swiped_by_supervisor.supervisor_number if attendance.swiped_by_supervisor else None,
             "attendance_date": attendance.attendance_date.isoformat(),
             "status": attendance.status,
             "check_in_time": attendance.check_in_time.isoformat() if attendance.check_in_time else None,
@@ -1966,9 +2505,6 @@ def iot_attendance_api(request):
     return JsonResponse(data, status=200 if success else 400)
 
 
-# -------------------------------------------------------------------
-# ATTENDANCE AND SHIFT FUNCTION-BASED VIEWS
-# -------------------------------------------------------------------
 @login_required
 def attendance_list(request):
     attendances = Attendance.objects.select_related("guard").all()
@@ -2102,15 +2638,21 @@ def attendance_list(request):
         })
         return redirect(f"{request.path}?{query}")
 
+    marked_date = parse_date(attendance_date or "")
+    if site and marked_date:
+        deployed_guard_ids = Deployment.objects.filter(
+            site_location=site,
+            status="Active",
+            start_date__lte=marked_date,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=marked_date)
+        ).values_list("guard_id", flat=True)
+        attendances = attendances.filter(guard_id__in=deployed_guard_ids, attendance_date=marked_date)
+    else:
+        attendances = attendances.none()
+
     if guard_id:
         attendances = attendances.filter(guard_id=guard_id)
-
-    if site:
-        deployed_guard_ids = Deployment.objects.filter(site_location=site).values_list("guard_id", flat=True)
-        attendances = attendances.filter(guard_id__in=deployed_guard_ids)
-
-    if attendance_date:
-        attendances = attendances.filter(attendance_date=attendance_date)
 
     if status:
         attendances = attendances.filter(status=status)
@@ -2202,15 +2744,21 @@ def shift_delete(request, id):
 
 @login_required
 def salary_list(request):
-    salaries = Salary.objects.select_related("guard", "supervisor").all()
+    selected_guard = request.GET.get("guard", "")
+    selected_year = request.GET.get("year", "")
+    selected_month = request.GET.get("month", "")
+    current_guard = get_user_guard(request.user) if user_is_guard(request.user) else None
+    if current_guard:
+        selected_guard = str(current_guard.guard_id)
+    salaries = build_recent_attendance_salary_rows(selected_guard, selected_year, selected_month)
     return render(request, "guardmanagementsystem/salary_list.html", {
-        "salaries": salaries
+        "salaries": salaries,
+        "selected_guard": selected_guard,
+        "selected_year": selected_year,
+        "selected_month": selected_month,
+        "self_service_guard": current_guard,
     })
 
-
-# -------------------------------------------------------------------
-# PAYROLL AND PAYSLIP HELPER FUNCTIONS
-# -------------------------------------------------------------------
 def calculate_uganda_paye(monthly_income):
     monthly_income = money(monthly_income)
 
@@ -2264,11 +2812,11 @@ def get_salary_advance_deduction(salary):
     if not month_number:
         return money(0)
 
+    salary_period_end = date(salary.year, month_number, monthrange(salary.year, month_number)[1])
     total = AdvanceRequest.objects.filter(
         guard=salary.guard,
         status__in=["Approved", "Paid"],
-        request_date__year=salary.year,
-        request_date__month=month_number,
+        request_date__lte=salary_period_end,
     ).aggregate(total=Sum("amount"))["total"]
 
     return money(total)
@@ -2283,10 +2831,11 @@ def build_salary_payroll_context(salary):
     month_number = MONTH_NUMBERS.get(salary.month, 0)
     lst_deduction = money(lst_annual / Decimal("4")) if month_number in [7, 8, 9, 10] else money(0)
     advance_total = get_salary_advance_deduction(salary)
+    advance_installment_limit = money(gross_pay * Decimal("0.20"))
     manual_deductions = money(salary.deductions)
     statutory_deductions = paye + nssf_employee + lst_deduction
     available_for_advance = max(gross_pay - statutory_deductions - manual_deductions, money(0))
-    advance_deduction = money(min(advance_total, available_for_advance))
+    advance_deduction = money(min(advance_total, advance_installment_limit, available_for_advance))
     advance_balance = money(advance_total - advance_deduction)
     total_deductions = statutory_deductions + manual_deductions + advance_deduction
     net_payable = gross_pay - total_deductions
@@ -2299,6 +2848,7 @@ def build_salary_payroll_context(salary):
         "lst_annual": lst_annual,
         "lst_deduction": lst_deduction,
         "advance_total": advance_total,
+        "advance_installment_limit": advance_installment_limit,
         "advance_deduction": advance_deduction,
         "advance_balance": advance_balance,
         "manual_deductions": manual_deductions,
@@ -2308,9 +2858,6 @@ def build_salary_payroll_context(salary):
     }
 
 
-# -------------------------------------------------------------------
-# SALARY, INCIDENT, DISCIPLINARY, AND ADVANCE FUNCTION-BASED VIEWS
-# -------------------------------------------------------------------
 @login_required
 def salary_payslip_individual(request, id):
     salary = get_object_or_404(
@@ -2325,8 +2872,32 @@ def salary_payslip_individual(request, id):
 
 
 @login_required
+def salary_payslip_from_attendance(request, guard_id, year, month):
+    current_guard = get_user_guard(request.user) if user_is_guard(request.user) else None
+    if current_guard and current_guard.guard_id != guard_id:
+        return HttpResponseForbidden("You can only view your own payslip.")
+
+    salary = next(
+        (
+            row for row in build_recent_attendance_salary_rows()
+            if row.guard_id == guard_id and row.year == year and row.month_number == month
+        ),
+        None,
+    )
+
+    if not salary:
+        raise Http404("No attendance-based payroll row found for this guard and month.")
+
+    return render(request, "guardmanagementsystem/payslip.html", {
+        "salary": salary,
+        "payroll": build_salary_payroll_context(salary),
+        "title": "Attendance Payslip",
+    })
+
+
+@login_required
 def salary_payslip_general(request):
-    salaries = Salary.objects.select_related("guard", "supervisor").all()
+    salaries = build_recent_attendance_salary_rows()
     payroll_rows = [
         {
             "salary": salary,
@@ -2476,6 +3047,15 @@ def incident_pdf_report(request, id):
 
 @login_required
 def incident_add(request):
+    supervisor = get_user_supervisor(request.user)
+    initial = {
+        "incident_date": timezone.localdate(),
+        "incident_time": timezone.localtime().time().replace(second=0, microsecond=0),
+        "status": "Pending",
+    }
+    if supervisor:
+        initial["reported_by"] = supervisor
+
     if request.method == "POST":
         form = IncidentForm(request.POST)
 
@@ -2494,7 +3074,7 @@ def incident_add(request):
 
             return redirect("incident_list")
     else:
-        form = IncidentForm()
+        form = IncidentForm(initial=initial)
 
     return render(request, "guardmanagementsystem/incident_form.html", {
         "form": form,
@@ -2572,17 +3152,108 @@ def disciplinary_action_delete(request, id):
     )
 
 
+def get_advance_review_supervisor(request, advance_request):
+    assigned_supervisor = advance_request.review_supervisor or advance_request.guard.supervisor
+    user_supervisor = Supervisor.objects.filter(user=request.user).first() if request.user.is_authenticated else None
+
+    if user_supervisor:
+        return user_supervisor if user_supervisor == assigned_supervisor else None
+
+    if request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser):
+        return assigned_supervisor
+
+    return None
+
+
+def send_advance_request_notification(request, advance_request):
+    supervisor = advance_request.review_supervisor or advance_request.guard.supervisor
+    if not supervisor or not supervisor.email:
+        return False, "No supervisor email is configured for this guard."
+
+    review_url = request.build_absolute_uri("/advance-requests/")
+    subject = f"Advance request from {advance_request.guard.full_name}"
+    message = "\n".join([
+        "A guard has submitted a remote salary advance request.",
+        "",
+        f"Guard: {advance_request.guard.guard_number} - {advance_request.guard.full_name}",
+        f"Phone: {advance_request.guard.phone}",
+        f"Amount: {advance_request.amount}",
+        f"Monthly installment: {advance_request.installment_amount}",
+        f"Recovery period: {advance_request.recovery_period_months} months",
+        f"Reason: {advance_request.reason}",
+        f"Status: {advance_request.status}",
+        "",
+        f"Review the request here: {review_url}",
+    ])
+
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [supervisor.email],
+        fail_silently=False,
+    )
+    return True, f"Notification sent to {supervisor.full_name}."
+
+
+def advance_request_remote(request):
+    submitted = None
+    notification_message = ""
+    current_guard = get_user_guard(request.user) if user_is_guard(request.user) else None
+
+    if request.method == "POST":
+        form = GuardSelfAdvanceRequestForm(request.POST) if current_guard else RemoteAdvanceRequestForm(request.POST)
+        if form.is_valid():
+            guard = current_guard or form.cleaned_data["guard"]
+            submitted = AdvanceRequest(
+                guard=guard,
+                amount=form.cleaned_data["amount"],
+                reason=form.cleaned_data["reason"],
+                status="Pending",
+            )
+            try:
+                submitted.full_clean()
+                submitted.save()
+                try:
+                    _, notification_message = send_advance_request_notification(request, submitted)
+                except Exception as exc:
+                    notification_message = f"Request submitted, but notification could not be sent: {exc}"
+            except ValidationError as exc:
+                submitted = None
+                form.add_error(None, exc)
+    else:
+        form = GuardSelfAdvanceRequestForm() if current_guard else RemoteAdvanceRequestForm()
+
+    return render(request, "guardmanagementsystem/advance_request_remote.html", {
+        "form": form,
+        "submitted": submitted,
+        "notification_message": notification_message,
+        "self_service_guard": current_guard,
+    })
+
+
 @login_required
 def advance_request_list(request):
-    advance_requests = AdvanceRequest.objects.select_related(
-        "guard", "approved_by"
-    ).all()
-    return show_records(
-        request,
-        advance_requests,
-        "guardmanagementsystem/advance_request_list.html",
-        "advance_requests"
+    advance_queryset = AdvanceRequest.objects.select_related(
+        "guard", "guard__supervisor", "review_supervisor", "approved_by"
     )
+    supervisor = Supervisor.objects.filter(user=request.user).first()
+    if supervisor and not request.user.is_superuser:
+        advance_queryset = advance_queryset.filter(review_supervisor=supervisor)
+
+    advance_requests = list(advance_queryset.order_by("-request_date", "-advance_id"))
+
+    for advance_request in advance_requests:
+        advance_request.display_installment_amount = (
+            advance_request.installment_amount
+            if advance_request.installment_amount
+            else advance_request.calculate_installment_amount()
+        )
+        advance_request.display_review_supervisor = advance_request.review_supervisor or advance_request.guard.supervisor
+
+    return render(request, "guardmanagementsystem/advance_request_list.html", {
+        "advance_requests": advance_requests
+    })
 
 
 @login_required
@@ -2598,3 +3269,48 @@ def advance_request_edit(request, id):
 @login_required
 def advance_request_delete(request, id):
     return delete_record(request, AdvanceRequest, {"advance_id": id}, "Delete Advance Request", "advance_request_list", "Advance request deleted successfully.")
+
+
+@login_required
+def advance_request_decision(request, id, decision):
+    advance_request = get_object_or_404(
+        AdvanceRequest.objects.select_related("guard", "guard__supervisor"),
+        advance_id=id,
+    )
+
+    if request.method != "POST":
+        return redirect("advance_request_list")
+
+    if decision not in ["approve", "reject"]:
+        messages.error(request, "Invalid advance request decision.")
+        return redirect("advance_request_list")
+
+    supervisor = get_advance_review_supervisor(request, advance_request)
+    if not supervisor:
+        messages.error(request, "Only the assigned supervisor can approve or reject this request.")
+        return redirect("advance_request_list")
+
+    if advance_request.status != "Pending":
+        messages.warning(request, "Only pending advance requests can be approved or rejected.")
+        return redirect("advance_request_list")
+
+    rejection_reason = str(request.POST.get("rejection_reason") or "").strip()
+    approval_reason = str(request.POST.get("approval_reason") or "").strip()
+    if decision == "approve" and not approval_reason:
+        messages.error(request, "Enter a reason for approving this advance request.")
+        return redirect("advance_request_list")
+
+    if decision == "reject" and not rejection_reason:
+        messages.error(request, "Enter a reason for rejecting this advance request.")
+        return redirect("advance_request_list")
+
+    advance_request.status = "Approved" if decision == "approve" else "Rejected"
+    advance_request.approved_by = supervisor
+    advance_request.approved_date = timezone.localdate()
+    advance_request.approval_reason = approval_reason if decision == "approve" else ""
+    advance_request.rejection_reason = rejection_reason if decision == "reject" else ""
+    advance_request.save(update_fields=["status", "approved_by", "approved_date", "approval_reason", "rejection_reason", "installment_amount", "recovery_period_months", "review_supervisor"])
+
+    log_action(request, "UPDATE", f"{advance_request.status} advance request {advance_request.advance_id}.")
+    messages.success(request, f"Advance request {advance_request.status.lower()} successfully.")
+    return redirect("advance_request_list")

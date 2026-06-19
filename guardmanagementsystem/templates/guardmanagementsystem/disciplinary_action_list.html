@@ -16,9 +16,11 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Disciplinary Actions">
             <thead>
                 <tr>
-                    <th>Guard</th>
-                    <th>Date</th>
-                    <th>Action</th>
+                    <th>Disciplinary Action ID</th>
+                    <th>Guard Number</th>
+                    <th>Action Date</th>
+                    <th>Action Type</th>
+                    <th>Description</th>
                     <th>Penalty</th>
                     <th>Issued By</th>
                     <th class="text-end">Actions</th>
@@ -27,9 +29,11 @@
             <tbody>
                 {% for disciplinary_action in disciplinary_actions %}
                     <tr>
-                        <td>{{ disciplinary_action.guard }}</td>
+                        <td>{{ disciplinary_action.disciplinary_id }}</td>
+                        <td>{{ disciplinary_action.guard.guard_number }}</td>
                         <td>{{ disciplinary_action.action_date }}</td>
                         <td>{{ disciplinary_action.action_type }}</td>
+                        <td>{{ disciplinary_action.description|truncatechars:50 }}</td>
                         <td>{{ disciplinary_action.penalty|default:"-" }}</td>
                         <td>{{ disciplinary_action.issued_by|default:"-" }}</td>
                         <td>
@@ -45,7 +49,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">No disciplinary actions found.</td>
+                        <td colspan="8" class="text-center text-muted py-4">No disciplinary actions found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

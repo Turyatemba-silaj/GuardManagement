@@ -1,0 +1,49 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h2>{{ title }}</h2>
+        <p>Send service requests, complaints, feedback, incident reports, or other communication to your supervisor.</p>
+    </div>
+    <a href="{% url 'client_communication_list' %}" class="btn btn-outline-secondary">
+        <i class="fa fa-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="form-card">
+    {% if self_service_client %}
+        <div class="alert alert-info">
+            <div class="fw-semibold mb-1">Client details selected from your login</div>
+            <div>{{ self_service_client.client_name }}</div>
+            <div class="small">{{ self_service_client.contact_person }}{% if self_service_client.phone %} | {{ self_service_client.phone }}{% endif %}</div>
+        </div>
+    {% endif %}
+
+    <form method="POST" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="row">
+            {% for field in form %}
+                <div class="{% if field.name == 'description' %}col-12{% else %}col-md-6{% endif %} mb-3">
+                    <label class="form-label fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}
+                        <div class="text-danger small mt-1">{{ field.errors }}</div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="page-actions d-flex justify-content-end gap-2 mt-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="fa fa-paper-plane"></i> Submit
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
