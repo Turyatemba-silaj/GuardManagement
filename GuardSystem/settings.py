@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -103,10 +105,22 @@ WSGI_APPLICATION = 'GuardSystem.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+DB_NAME = BASE_DIR / 'db.sqlite3'
+if os.environ.get("VERCEL"):
+    bundled_db = DB_NAME
+    runtime_db = Path(tempfile.gettempdir()) / "db.sqlite3"
+    if runtime_db.exists():
+        os.chmod(runtime_db, 0o600)
+        runtime_db.unlink()
+    if bundled_db.exists():
+        shutil.copyfile(bundled_db, runtime_db)
+        os.chmod(runtime_db, 0o600)
+    DB_NAME = runtime_db
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DB_NAME,
     }
 }
 
