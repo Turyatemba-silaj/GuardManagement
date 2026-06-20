@@ -50,33 +50,79 @@
         </div>
     </form>
 </div>
+
+{% if form.iot_device and form.client %}
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const employeeType = document.getElementById("id_employee_type");
-        const guard = document.getElementById("id_guard");
-        const supervisor = document.getElementById("id_supervisor");
+document.addEventListener("DOMContentLoaded", function () {
+    const clientSelect = document.getElementById("id_client");
+    const deviceSelect = document.getElementById("id_iot_device");
+    const locationInput = document.getElementById("id_location");
 
-        if (!employeeType || !guard || !supervisor) {
-            return;
-        }
+    if (!clientSelect || !deviceSelect) {
+        return;
+    }
 
-        const guardGroup = guard.closest(".col-md-6");
-        const supervisorGroup = supervisor.closest(".col-md-6");
+    const endpoint = "{% url 'contract_iot_devices' %}";
+    const initialDeviceId = deviceSelect.value;
 
-        function syncSalaryFields() {
-            const isSupervisor = employeeType.value === "Supervisor";
-            guardGroup.style.display = isSupervisor ? "none" : "";
-            supervisorGroup.style.display = isSupervisor ? "" : "none";
+    function setDeviceOptions(devices, selectedId) {
+        const currentValue = selectedId || "";
+        deviceSelect.innerHTML = "";
+        deviceSelect.appendChild(new Option("---------", ""));
 
-            if (isSupervisor) {
-                guard.value = "";
-            } else {
-                supervisor.value = "";
+        devices.forEach(function (device) {
+            const option = new Option(device.label, device.id);
+            option.dataset.siteLocation = device.site_location || "";
+            option.dataset.clientId = device.client_id || "";
+            if (String(device.id) === String(currentValue)) {
+                option.selected = true;
             }
+            deviceSelect.appendChild(option);
+        });
+    }
+
+    function syncContractFromDevice() {
+        const selectedOption = deviceSelect.options[deviceSelect.selectedIndex];
+        const siteLocation = selectedOption ? selectedOption.dataset.siteLocation : "";
+        const clientId = selectedOption ? selectedOption.dataset.clientId : "";
+        if (clientId) {
+            clientSelect.value = clientId;
+        }
+        if (locationInput && siteLocation) {
+            locationInput.value = siteLocation;
+        }
+    }
+
+    function refreshDevices(keepCurrent) {
+        const params = new URLSearchParams();
+        if (clientSelect.value) {
+            params.set("client_id", clientSelect.value);
+        }
+        if (keepCurrent && initialDeviceId) {
+            params.set("selected_id", initialDeviceId);
         }
 
-        employeeType.addEventListener("change", syncSalaryFields);
-        syncSalaryFields();
+        fetch(endpoint + "?" + params.toString(), {
+            headers: {"X-Requested-With": "XMLHttpRequest"}
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                setDeviceOptions(data.devices || [], keepCurrent ? initialDeviceId : "");
+                syncContractFromDevice();
+            })
+            .catch(function () {
+                setDeviceOptions([], "");
+            });
+    }
+
+    clientSelect.addEventListener("change", function () {
+        refreshDevices(false);
     });
+    deviceSelect.addEventListener("change", maybeFillLocation);
+
+    refreshDevices(true);
+});
 </script>
+{% endif %}
 {% endblock %}
+

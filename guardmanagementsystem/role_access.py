@@ -5,7 +5,6 @@ PUBLIC_URL_NAMES = {
     "signup",
     "forgot_password",
     "reset_password",
-    "advance_request_remote",
     "iot_attendance_api",
 }
 
@@ -22,10 +21,19 @@ OPERATIONS_URLS = {
     "client_add",
     "client_edit",
     "client_delete",
+    "contract_list",
+    "contract_add",
+    "contract_iot_devices",
+    "contract_edit",
+    "contract_delete",
     "deployment_list",
     "deployment_add",
     "deployment_edit",
     "deployment_delete",
+    "deployment_guard_list",
+    "deployment_guard_add",
+    "deployment_guard_edit",
+    "deployment_guard_delete",
     "program_guard",
     "shift_list",
     "shift_add",
@@ -33,15 +41,17 @@ OPERATIONS_URLS = {
     "shift_delete",
     "shift_import",
     "schedule_csv_template",
+    "schedule_xlsx_template",
+    "asset_list",
+    "asset_add",
+    "asset_edit",
+    "asset_delete",
+    "asset_lifecycle_action",
     "incident_list",
     "incident_add",
     "incident_edit",
     "incident_delete",
     "incident_pdf_report",
-    "attendance_list",
-    "attendance_add",
-    "attendance_edit",
-    "attendance_delete",
 }
 
 HR_URLS = {
@@ -49,14 +59,6 @@ HR_URLS = {
     "guard_add",
     "guard_edit",
     "guard_delete",
-    "supervisor_list",
-    "supervisor_add",
-    "supervisor_edit",
-    "supervisor_delete",
-    "disciplinary_action_list",
-    "disciplinary_action_add",
-    "disciplinary_action_edit",
-    "disciplinary_action_delete",
     "salary_list",
     "salary_payslip_general",
     "salary_payslip_from_attendance",
@@ -71,50 +73,9 @@ FINANCE_URLS = {
     "salary_payslip_general",
     "salary_payslip_from_attendance",
     "salary_payslip_individual",
-    "advance_request_list",
-    "advance_request_add",
-    "advance_request_edit",
-    "advance_request_delete",
-    "advance_request_decision",
-}
-
-SUPERVISOR_URLS = {
-    "attendance_query_report",
-    "schedule_report",
-    "schedule_report_csv_export",
-    "incident_list",
-    "incident_add",
-    "incident_pdf_report",
-    "iot_swipe_attendance",
-    "advance_request_list",
-    "advance_request_add",
-    "advance_request_edit",
-    "advance_request_delete",
-    "advance_request_decision",
-}
-
-GUARD_URLS = {
-    "advance_request_remote",
-    "iot_swipe_attendance",
-    "salary_list",
-    "salary_payslip_from_attendance",
-}
-
-CLIENT_URLS = {
-    "client_communication_list",
-    "client_communication_add",
-}
-
-CLIENT_COMMUNICATION_URLS = {
-    "client_communication_list",
-    "client_communication_add",
-    "client_communication_update",
 }
 
 DEVICE_REPORT_URLS = {
-    "attendance_query_report",
-    "schedule_report",
-    "schedule_report_csv_export",
     "rfid_card_list",
     "rfid_card_add",
     "rfid_card_edit",
@@ -124,37 +85,34 @@ DEVICE_REPORT_URLS = {
     "iot_device_edit",
     "iot_device_delete",
     "iot_swipe_attendance",
+    "iot_swipe_options",
+}
+
+GUARD_SELF_SERVICE_URLS = {
+    "iot_swipe_attendance",
+    "iot_swipe_options",
+    "salary_list",
+    "salary_payslip_from_attendance",
 }
 
 ROLE_URLS = {
-    "Admin": ADMIN_URLS | OPERATIONS_URLS | HR_URLS | FINANCE_URLS | DEVICE_REPORT_URLS | CLIENT_COMMUNICATION_URLS | {"dashboard"},
-    "Supervisor": ((
-        ADMIN_URLS
-        | OPERATIONS_URLS
-        | HR_URLS
-        | FINANCE_URLS
-        | DEVICE_REPORT_URLS
-        | CLIENT_COMMUNICATION_URLS
-        | {"dashboard"}
-    ) - {"client_add", "guard_add", "supervisor_add", "dashboard", "audit_log_list"}),
-    "Guard": GUARD_URLS,
-    "Client": CLIENT_URLS,
+    "Admin": ADMIN_URLS | OPERATIONS_URLS | HR_URLS | FINANCE_URLS | DEVICE_REPORT_URLS | {"dashboard"},
+    "Guard": GUARD_SELF_SERVICE_URLS,
+    "Client": set(),
 }
 
 ROLE_PERMISSIONS = {
-    "can_people": {"Admin", "Supervisor"},
-    "can_users": {"Admin", "Supervisor"},
+    "can_people": {"Admin"},
+    "can_users": {"Admin"},
     "can_audit_logs": {"Admin"},
-    "can_operations": {"Admin", "Supervisor"},
-    "can_payroll_cases": {"Admin", "Supervisor"},
-    "can_reports_devices": {"Admin", "Supervisor"},
-    "can_salaries": {"Admin", "Supervisor"},
-    "can_advances": {"Admin", "Supervisor"},
-    "can_cases": {"Admin", "Supervisor"},
-    "can_devices": {"Admin", "Supervisor"},
+    "can_operations": {"Admin"},
+    "can_payroll_cases": {"Admin"},
+    "can_reports_devices": {"Admin"},
+    "can_salaries": {"Admin"},
+    "can_cases": {"Admin"},
+    "can_devices": {"Admin"},
     "can_guard_self_service": {"Guard"},
-    "can_client_self_service": {"Client"},
-    "can_client_communications": {"Admin", "Supervisor"},
+    "can_client_self_service": set(),
     "can_dashboard": {"Admin"},
     "can_add_people_profiles": {"Admin"},
 }
@@ -168,23 +126,34 @@ def user_role_names(user):
     return set(user.groups.values_list("name", flat=True))
 
 
+def user_is_admin(user):
+    return user.is_authenticated and (
+        user.is_superuser or user.groups.filter(name="Admin").exists()
+    )
+
+
 def user_can_access(user, url_name):
     if not url_name or url_name in PUBLIC_URL_NAMES:
         return True
     if not user.is_authenticated:
         return True
-    if user.is_superuser:
+    if user_is_admin(user):
+        return True
+    roles = user_role_names(user)
+    if any(url_name in ROLE_URLS.get(role, set()) for role in roles):
         return True
 
-    roles = user_role_names(user)
-    return any(url_name in ROLE_URLS.get(role, set()) for role in roles)
+    return False
 
 
 def nav_permissions(user):
     roles = user_role_names(user)
-    if getattr(user, "is_superuser", False):
+    if user_is_admin(user):
         roles = {"Admin"}
     return {
         permission: bool(roles & allowed_roles)
         for permission, allowed_roles in ROLE_PERMISSIONS.items()
     }
+
+
+

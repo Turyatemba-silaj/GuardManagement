@@ -318,10 +318,6 @@
                         <td class="amount">{{ payroll.lst_deduction }}</td>
                     </tr>
                     <tr>
-                        <td>Salary Advance Deduction (20% Gross)</td>
-                        <td class="amount">{{ payroll.advance_deduction }}</td>
-                    </tr>
-                    <tr>
                         <td>Other Deductions</td>
                         <td class="amount">{{ payroll.manual_deductions }}</td>
                     </tr>
@@ -334,7 +330,7 @@
         </div>
     </div>
 
-    <p class="section-title">Statutory and Advance Summary</p>
+    <p class="section-title">Statutory Summary</p>
     <div class="table-responsive mb-4">
         <table class="table table-bordered mb-0">
             <tbody>
@@ -345,20 +341,12 @@
                     <td class="amount">{{ payroll.nssf_employer }}</td>
                 </tr>
                 <tr>
-                    <th>Salary Advance Total</th>
-                    <td class="amount">{{ payroll.advance_total }}</td>
-                    <th>Monthly Advance Installment</th>
-                    <td class="amount">{{ payroll.advance_installment_limit }}</td>
-                </tr>
-                <tr>
-                    <th>Advance Balance</th>
-                    <td class="amount">{{ payroll.advance_balance }}</td>
                     <th>Annual Local Service Tax</th>
                     <td class="amount">{{ payroll.lst_annual }}</td>
-                </tr>
-                <tr>
                     <th>Local Service Tax Deduction</th>
                     <td class="amount">{{ payroll.lst_deduction }}</td>
+                </tr>
+                <tr>
                     <th></th>
                     <td></td>
                 </tr>

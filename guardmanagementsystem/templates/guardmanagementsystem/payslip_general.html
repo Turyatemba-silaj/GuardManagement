@@ -216,7 +216,6 @@
                     <th class="amount">PAYE</th>
                     <th class="amount">NSSF</th>
                     <th class="amount">LST</th>
-                    <th class="amount">Advance (20%)</th>
                     <th class="amount">Other</th>
                     <th class="amount">Net Payable</th>
                     <th>Payment Date</th>
@@ -237,7 +236,6 @@
                         <td class="amount">{{ payroll.paye }}</td>
                         <td class="amount">{{ payroll.nssf_employee }}</td>
                         <td class="amount">{{ payroll.lst_deduction }}</td>
-                        <td class="amount">{{ payroll.advance_deduction }}</td>
                         <td class="amount">{{ payroll.manual_deductions }}</td>
                         <td class="amount"><strong>{{ payroll.net_payable }}</strong></td>
                         <td>{{ salary.payment_date }}</td>
@@ -245,7 +243,7 @@
                     {% endwith %}
                 {% empty %}
                     <tr>
-                        <td colspan="15" class="text-center text-muted py-4">No salary records found.</td>
+                        <td colspan="14" class="text-center text-muted py-4">No salary records found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -256,7 +254,6 @@
                     <td class="amount">{{ totals.paye|default:"0.00" }}</td>
                     <td class="amount">{{ totals.nssf_employee|default:"0.00" }}</td>
                     <td class="amount">{{ totals.lst_deduction|default:"0.00" }}</td>
-                    <td class="amount">{{ totals.advance_deduction|default:"0.00" }}</td>
                     <td class="amount">{{ totals.manual_deductions|default:"0.00" }}</td>
                     <td class="amount">{{ totals.net_payable|default:"0.00" }}</td>
                     <td></td>

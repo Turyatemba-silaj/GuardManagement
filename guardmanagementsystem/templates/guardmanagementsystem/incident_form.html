@@ -101,11 +101,6 @@
                     {% if form.location.errors %}<div class="field-error">{{ form.location.errors }}</div>{% endif %}
                 </div>
                 <div class="col-lg-3 col-md-6">
-                    <label class="form-label fw-semibold" for="{{ form.reported_by.id_for_label }}">Supervisor</label>
-                    {{ form.reported_by }}
-                    {% if form.reported_by.errors %}<div class="field-error">{{ form.reported_by.errors }}</div>{% endif %}
-                </div>
-                <div class="col-lg-3 col-md-6">
                     <label class="form-label fw-semibold" for="{{ form.status.id_for_label }}">Status</label>
                     {{ form.status }}
                     {% if form.status.errors %}<div class="field-error">{{ form.status.errors }}</div>{% endif %}

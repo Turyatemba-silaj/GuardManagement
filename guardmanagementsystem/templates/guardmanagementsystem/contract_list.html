@@ -1,0 +1,98 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Contracts</h2>
+        <p class="text-muted mb-0">Manage client security service contracts</p>
+    </div>
+
+    <a href="{% url 'contract_add' %}" class="btn btn-primary">
+        <i class="fa fa-plus"></i> Add Contract
+    </a>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Contracts">
+            <thead>
+                <tr>
+                    <th>Contract No</th>
+                    <th>Client</th>
+                    <th>Location</th>
+                    <th>Guards</th>
+                    <th>Day Shift</th>
+                    <th>Night Shift</th>
+                    <th>Charge / Guard</th>
+                    <th>Monthly Value</th>
+                    <th>Type</th>
+                    <th>Period</th>
+                    <th>IoT Device</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for contract in contracts %}
+                    <tr>
+                        <td>{{ contract.contract_number }}</td>
+                        <td>{{ contract.client.client_name }}</td>
+                        <td>{{ contract.location|default:"-" }}</td>
+                        <td>{{ contract.number_of_guards }}</td>
+                        <td>{{ contract.day_shift_guards }}</td>
+                        <td>{{ contract.night_shift_guards }}</td>
+                        <td>{{ contract.charge_per_guard }}</td>
+                        <td>{{ contract.monthly_value }}</td>
+                        <td>{{ contract.contract_type }}</td>
+
+                        <td>
+                            {{ contract.start_date|date:"M d, Y" }}
+                            -
+                            {{ contract.end_date|date:"M d, Y"|default:"Open" }}
+                        </td>
+                        <td>
+                            {% if contract.iot_device %}
+                                {{ contract.iot_device.client.client_name|default:contract.client.client_name }} - {{ contract.iot_device.site_location }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if contract.status == "Active" %}
+                                <span class="badge bg-success">Active</span>
+                            {% elif contract.status == "Expired" %}
+                                <span class="badge bg-secondary">Expired</span>
+                            {% elif contract.status == "Terminated" %}
+                                <span class="badge bg-danger">Terminated</span>
+                            {% else %}
+                                <span class="badge bg-info">{{ contract.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="action-buttons">
+                                <a href="{% url 'contract_edit' contract.contract_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-pen"></i>
+                                </a>
+
+                                <a href="{% url 'contract_delete' contract.contract_id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="fa fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="13" class="text-center text-muted py-4">
+                            No contracts found.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+
+

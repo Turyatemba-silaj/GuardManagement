@@ -22,30 +22,12 @@ class RFIDCardAdmin(admin.ModelAdmin):
         "issue_date",
     )
 
-
-
-@admin.register(Supervisor)
-class SupervisorAdmin(admin.ModelAdmin):
-    list_display = (
-        "supervisor_id",
-        "user",
-        "full_name",
-        "phone",
-        "email",
-    )
-
-    search_fields = (
-        "full_name",
-        "phone",
-        "email",
-    )
-
-
-# ============================================================
-# GUARD ADMIN
-# ============================================================
 @admin.register(Guard)
 class GuardAdmin(admin.ModelAdmin):
+    exclude = (
+        "user",
+    )
+
     list_display = (
         "guard_id",
         "user",
@@ -53,7 +35,6 @@ class GuardAdmin(admin.ModelAdmin):
         "full_name",
         "phone",
         "email",
-        "display_supervisor",
         "date_of_joining",
         "daily_rate",
         "status",
@@ -75,21 +56,6 @@ class GuardAdmin(admin.ModelAdmin):
         "date_of_joining",
     )
 
-    def display_supervisor(self, obj):
-        supervisor = getattr(obj, "supervisor", None)
-
-        if supervisor is None:
-            return "No Supervisor"
-
-        if hasattr(supervisor, "all"):
-            supervisors = supervisor.all()
-            if supervisors.exists():
-                return ", ".join(str(item) for item in supervisors)
-            return "No Supervisor"
-
-        return supervisor
-
-    display_supervisor.short_description = "Supervisor"
 @admin.register(IoTDevice)
 class IoTDeviceAdmin(admin.ModelAdmin):
     list_display = (
@@ -106,7 +72,7 @@ class IoTDeviceAdmin(admin.ModelAdmin):
         "device_name",
         "device_code",
         "client__client_name",
-        "deployment__guard__full_name",
+        "deployment__deployment_guards__guard__full_name",
         "site_location",
     )
 
@@ -115,12 +81,12 @@ class IoTDeviceAdmin(admin.ModelAdmin):
         "site_location",
     )
 
-
-# ============================================================
-# CLIENT ADMIN
-# ============================================================
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
+    exclude = (
+        "user",
+    )
+
     list_display = (
         "client_id",
         "user",
@@ -141,15 +107,51 @@ class ClientAdmin(admin.ModelAdmin):
     )
 
 
-# ============================================================
-# DEPLOYMENT ADMIN
-# ============================================================
+@admin.register(Contract)
+class ContractAdmin(admin.ModelAdmin):
+    list_display = (
+        "contract_id",
+        "contract_number",
+        "client",
+        "location",
+        "number_of_guards",
+        "day_shift_guards",
+        "night_shift_guards",
+        "charge_per_guard",
+        "monthly_value",
+        "contract_type",
+        "status",
+        "start_date",
+        "end_date",
+        "status",
+    )
+
+    search_fields = (
+        "contract_number",
+        "client__client_name",
+        "location",
+        "contract_type",
+    )
+
+    list_filter = (
+        "status",
+        "contract_type",
+        "start_date",
+        "end_date",
+        "status",
+    )
+
+    readonly_fields = (
+        "monthly_value",
+    )
+
 @admin.register(Deployment)
 class DeploymentAdmin(admin.ModelAdmin):
     list_display = (
         "deployment_id",
-        "guard",
+        "assigned_guards",
         "client",
+        "contract",
         "site_location",
         "start_date",
         "end_date",
@@ -157,8 +159,10 @@ class DeploymentAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
-        "guard__full_name",
+        "deployment_guards__guard__full_name",
+        "deployment_guards__guard__guard_number",
         "client__client_name",
+        "contract__contract_number",
         "site_location",
     )
 
@@ -166,12 +170,38 @@ class DeploymentAdmin(admin.ModelAdmin):
         "status",
         "start_date",
         "end_date",
+        "status",
     )
 
+    def assigned_guards(self, obj):
+        guards = [assignment.guard.full_name for assignment in obj.deployment_guards.all()]
+        return ", ".join(guards) or "-"
 
-# ============================================================
-# ASSET ADMIN
-# ============================================================
+
+@admin.register(DeploymentGuard)
+class DeploymentGuardAdmin(admin.ModelAdmin):
+    list_display = (
+        "deployment_guard_id",
+        "deployment",
+        "guard",
+        "deployment_date",
+        "check_in_time",
+        "check_out_time",
+        "status",
+    )
+
+    search_fields = (
+        "deployment__client__client_name",
+        "deployment__site_location",
+        "guard__full_name",
+        "guard__guard_number",
+    )
+
+    list_filter = (
+        "deployment_date",
+        "status",
+    )
+
 @admin.register(Asset)
 class AssetAdmin(admin.ModelAdmin):
     list_display = (
@@ -198,9 +228,30 @@ class AssetAdmin(admin.ModelAdmin):
     )
 
 
-# ============================================================
-# ATTENDANCE ADMIN
-# ============================================================
+@admin.register(AssetAssignmentHistory)
+class AssetAssignmentHistoryAdmin(admin.ModelAdmin):
+    list_display = (
+        "history_id",
+        "asset",
+        "guard",
+        "assigned_date",
+        "returned_date",
+        "condition_on_return",
+    )
+
+    search_fields = (
+        "asset__asset_name",
+        "asset__serial_number",
+        "guard__full_name",
+        "notes",
+    )
+
+    list_filter = (
+        "assigned_date",
+        "returned_date",
+        "condition_on_return",
+    )
+
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
     list_display = (
@@ -210,13 +261,10 @@ class AttendanceAdmin(admin.ModelAdmin):
         "check_in_time",
         "check_out_time",
         "status",
-        "swiped_by_supervisor",
     )
 
     search_fields = (
         "guard__full_name",
-        "swiped_by_supervisor__full_name",
-        "swiped_by_supervisor__supervisor_number",
     )
 
     list_filter = (
@@ -224,10 +272,6 @@ class AttendanceAdmin(admin.ModelAdmin):
         "attendance_date",
     )
 
-
-# ============================================================
-# SHIFT ADMIN
-# ============================================================
 @admin.register(Shift)
 class ShiftAdmin(admin.ModelAdmin):
     list_display = (
@@ -250,9 +294,6 @@ class ShiftAdmin(admin.ModelAdmin):
     )
 
 
-# ============================================================
-# SALARY ADMIN
-# ============================================================
 @admin.register(Salary)
 class SalaryAdmin(admin.ModelAdmin):
     list_display = (
@@ -280,10 +321,6 @@ class SalaryAdmin(admin.ModelAdmin):
         "net_pay",
     )
 
-
-# ============================================================
-# INCIDENT ADMIN
-# ============================================================
 @admin.register(Incident)
 class IncidentAdmin(admin.ModelAdmin):
     list_display = (
@@ -292,7 +329,6 @@ class IncidentAdmin(admin.ModelAdmin):
         "incident_date",
         "incident_type",
         "location",
-        "reported_by",
         "status",
     )
 
@@ -310,63 +346,6 @@ class IncidentAdmin(admin.ModelAdmin):
     )
 
 
-# ============================================================
-# DISCIPLINARY ACTION ADMIN
-# ============================================================
-@admin.register(DisciplinaryAction)
-class DisciplinaryActionAdmin(admin.ModelAdmin):
-    list_display = (
-        "disciplinary_id",
-        "guard",
-        "action_date",
-        "action_type",
-        "penalty",
-        "issued_by",
-    )
-
-    search_fields = (
-        "guard__full_name",
-        "action_type",
-        "description",
-        "penalty",
-    )
-
-    list_filter = (
-        "action_type",
-        "action_date",
-    )
-
-
-# ============================================================
-# ADVANCE REQUEST ADMIN
-# ============================================================
-@admin.register(AdvanceRequest)
-class AdvanceRequestAdmin(admin.ModelAdmin):
-    list_display = (
-        "advance_id",
-        "guard",
-        "request_date",
-        "amount",
-        "status",
-        "approved_by",
-        "approved_date",
-    )
-
-    search_fields = (
-        "guard__full_name",
-        "reason",
-    )
-
-    list_filter = (
-        "status",
-        "request_date",
-        "approved_date",
-    )
-
-
-# ============================================================
-# AUDIT LOG ADMIN
-# ============================================================
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = (

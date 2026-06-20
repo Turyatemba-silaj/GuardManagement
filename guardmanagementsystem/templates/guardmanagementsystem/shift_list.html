@@ -24,8 +24,9 @@
                     <th>Shift Id</th>
                     <th>Shift Name</th>
                     <th>Guard</th>
-                    <th>Start Time</th>
-                    <th>End Time</th>
+                    <th>Schedule Date</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
                     <th>Shift Type</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -36,9 +37,10 @@
                         <td>{{ shift.shift_id }}</td>
                         <td>{{ shift.shift_name }}</td>
                         <td>{{ shift.guard }}</td>
-                        <td>{{ shift.start_time }}</td>
-                        <td>{{ shift.end_time }}</td>
-                        <td><span class="badge bg-secondary">{{ shift.shift_code }}</span></td>
+                        <td>{{ shift.start_time|date:"M d, Y" }}</td>
+                        <td>{{ shift.time_in_display }}</td>
+                        <td>{{ shift.time_out_display }}</td>
+                        <td><span class="badge bg-secondary">{{ shift.shift_type_display }} "{{ shift.shift_code }}"</span></td>
                         <td>
                             <div class="action-buttons">
                                 <a href="{% url 'shift_edit' shift.shift_id %}" class="btn btn-sm btn-outline-primary">
@@ -52,7 +54,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">No shifts found.</td>
+                        <td colspan="8" class="text-center text-muted py-4">No shifts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -60,3 +62,5 @@
     </div>
 </div>
 {% endblock %}
+
+

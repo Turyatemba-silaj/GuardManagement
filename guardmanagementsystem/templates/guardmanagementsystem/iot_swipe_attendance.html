@@ -11,46 +11,50 @@
         width: 100%;
     }
 
+    .attendance-table-wrap {
+        overflow-x: auto;
+        width: 100%;
+    }
+
     .recent-attendance-table {
-        table-layout: fixed;
+        min-width: 1380px;
+        table-layout: auto;
         width: 100%;
     }
 
     .recent-attendance-table th,
     .recent-attendance-table td {
-        font-size: 0.82rem;
-        overflow: hidden;
-        padding: 0.42rem 0.45rem;
-        text-overflow: ellipsis;
+        font-size: 0.84rem;
+        padding: 0.52rem 0.6rem;
         vertical-align: middle;
         white-space: nowrap;
     }
 
-    .recent-attendance-table th:nth-child(1) {
-        width: 20%;
-    }
-
-    .recent-attendance-table th:nth-child(2) {
-        width: 24%;
-    }
-
-    .recent-attendance-table th:nth-child(3) {
-        width: 16%;
-    }
-
-    .recent-attendance-table th:nth-child(4) {
-        width: 12%;
-    }
-
+    .recent-attendance-table th:nth-child(1),
+    .recent-attendance-table td:nth-child(1) { min-width: 180px; }
+    .recent-attendance-table th:nth-child(2),
+    .recent-attendance-table td:nth-child(2) { min-width: 160px; }
+    .recent-attendance-table th:nth-child(3),
+    .recent-attendance-table td:nth-child(3) { min-width: 170px; }
+    .recent-attendance-table th:nth-child(4),
+    .recent-attendance-table td:nth-child(4) { min-width: 90px; }
     .recent-attendance-table th:nth-child(5),
-    .recent-attendance-table th:nth-child(6) {
-        width: 8%;
-    }
-
+    .recent-attendance-table td:nth-child(5) { min-width: 115px; }
+    .recent-attendance-table th:nth-child(6),
+    .recent-attendance-table td:nth-child(6),
     .recent-attendance-table th:nth-child(7),
-    .recent-attendance-table th:nth-child(8) {
-        width: 12%;
+    .recent-attendance-table td:nth-child(7) { min-width: 90px; }
+    .recent-attendance-table th:nth-child(8),
+    .recent-attendance-table td:nth-child(8) { min-width: 135px; }
+    .recent-attendance-table th:nth-child(9),
+    .recent-attendance-table td:nth-child(9) { min-width: 90px; }
+    .recent-attendance-table th:nth-child(10),
+    .recent-attendance-table td:nth-child(10) {
+        min-width: 220px;
+        white-space: normal;
     }
+    .recent-attendance-table th:nth-child(11),
+    .recent-attendance-table td:nth-child(11) { min-width: 150px; }
 
     @media (max-width: 991.98px) {
         .recent-attendance-table th,
@@ -73,13 +77,13 @@
 
 <div class="row g-3 swipe-layout">
     {% if not self_service_guard %}
-    <div class="col-xl-3 col-lg-4">
+    <div class="col-12">
         <div class="form-card">
            
-            <form method="POST">
+            <form method="POST" class="row g-3 align-items-end">
                 {% csrf_token %}
 
-                <div class="mb-3">
+                <div class="col-xl-3 col-md-6">
                     <label class="form-label fw-semibold" for="device">IoT Device</label>
                     <select id="device" name="device" class="form-control" required>
                         <option value="">Select device</option>
@@ -89,72 +93,57 @@
                     </select>
                 </div>
 
-                <div class="mb-3">
+                <div class="col-xl-3 col-md-6">
                     <label class="form-label fw-semibold" for="site_location">Current Site</label>
                     <select id="site_location" name="site_location" class="form-control">
-                        <option value="">Use selected device site</option>
-                        {% for site in site_locations %}
-                            <option value="{{ site }}">{{ site }}</option>
-                        {% endfor %}
+                        <option value="">Select IoT device first</option>
                     </select>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-semibold" for="swiped_by_supervisor">Recording Supervisor</label>
-                    <select id="swiped_by_supervisor" name="swiped_by_supervisor" class="form-control" required>
-                        <option value="">Select recording supervisor</option>
-                        {% for supervisor in supervisors %}
-                            <option value="{{ supervisor.supervisor_id }}">
-                                {{ supervisor.supervisor_number|default:"-" }} - {{ supervisor.full_name }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="mb-3" id="rfid-card-wrapper">
+                <div class="col-xl-3 col-md-6" id="rfid-card-wrapper">
                     <label class="form-label fw-semibold" for="card_id">RFID Card Number</label>
                     <select id="card_id" name="card_id" class="form-control" required>
                         <option value="">Select guard RFID card</option>
                         {% for card in rfid_cards %}
-                            <option value="{{ card.card_uid }}" data-supervisor-id="{{ card.assigned_supervisor_id }}">
+                            <option value="{{ card.card_uid }}">
                                 {{ card.swipe_label }}
                             </option>
                         {% empty %}
-                            <option value="">No active RFID cards registered</option>
+                            <option value="">Select IoT device first</option>
                         {% endfor %}
                     </select>
                 </div>
 
-                <div class="mb-3">
+                <div class="col-xl-3 col-md-6">
                     <label class="form-label fw-semibold" for="action">Action</label>
                     <select id="action" name="action" class="form-control">
-                        <option value="check_in">Check In</option>
+                        <option value="auto">Hourly Swipe</option>
                         <option value="check_out">Check Out</option>
                         <option value="mark_absent">Assigned RFID Absent</option>
                     </select>
                 </div>
 
-                <div class="mb-3" id="replacement-wrapper">
+                <div class="col-xl-3 col-md-6" id="replacement-wrapper">
                     <label class="form-label fw-semibold" for="replacement_card_id">Replacement RFID Card</label>
                     <select id="replacement_card_id" name="replacement_card_id" class="form-control">
                         <option value="">Scan/select replacement RFID card</option>
                         {% for card in rfid_cards %}
-                            <option value="{{ card.card_uid }}" data-supervisor-id="{{ card.assigned_supervisor_id }}">
+                            <option value="{{ card.card_uid }}">
                                 {{ card.swipe_label }}
                             </option>
                         {% endfor %}
                     </select>
                 </div>
 
-                <button type="submit" class="btn btn-primary">
+                <div class="col-xl-3 col-md-6"><button type="submit" class="btn btn-primary w-100">
                     <i class="fa fa-id-card"></i> Simulate Swipe
-                </button>
+                </button></div>
             </form>
         </div>
     </div>
     {% endif %}
 
-    <div class="{% if self_service_guard %}col-12{% else %}col-xl-9 col-lg-8{% endif %}">
+    <div class="col-12">
         <div class="table-card">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">{% if self_service_guard %}My Swipe Attendance{% else %}Recent Attendance{% endif %}</h5>
@@ -164,17 +153,20 @@
                 </a>
                 {% endif %}
             </div>
-            <div>
+            <div class="attendance-table-wrap">
                 <table class="table table-hover table-bordered align-middle mb-0 recent-attendance-table">
                     <thead>
                         <tr>
-                            <th>Sup No</th>
+                            <th>Guard</th>
                             <th>Client</th>
                             <th>Guard Number</th>
+                            <th>Shift</th>
                             <th>Date</th>
                             <th>In</th>
                             <th>Out</th>
                             <th>Status</th>
+                            <th>Swipes</th>
+                            <th>Missed</th>
                             <th>Payroll</th>
                         </tr>
                     </thead>
@@ -184,25 +176,39 @@
                                 <td title="{{ attendance.employee_label }}">{{ attendance.employee_label }}</td>
                                 <td title="{{ attendance.client_label }}">{{ attendance.client_label }}</td>
                                 <td title="{{ attendance.guard_profile_label }}">{{ attendance.guard_profile_label }}</td>
+                                <td><span class="badge bg-secondary">{{ attendance.shift_label }}</span></td>
                                 <td>{{ attendance.attendance_date|date:"M d, Y" }}</td>
                                 <td>{{ attendance.check_in_time|time:"H:i:s"|default:"-" }}</td>
                                 <td>{{ attendance.check_out_time|time:"H:i:s"|default:"-" }}</td>
                                 <td title="{{ attendance.status_label }}">{{ attendance.status_label }}</td>
-                                <td>
-                                    {% if self_service_guard %}
-                                        <a href="{% url 'salary_payslip_from_attendance' attendance.payroll_guard_id attendance.payroll_year attendance.payroll_month %}" class="btn btn-sm btn-outline-success">
-                                            <i class="fa fa-file-invoice-dollar"></i> Payslip
-                                        </a>
+                                <td>{{ attendance.recorded_swipe_count }}/{{ attendance.expected_swipe_count }}</td>
+                                <td title="{{ attendance.missed_swipe_label }}">
+                                    {% if attendance.missed_swipe_count %}
+                                        <span class="badge bg-danger">{{ attendance.missed_swipe_count }}</span>
+                                        {{ attendance.missed_swipe_label }}
                                     {% else %}
-                                        <a href="{% url 'salary_list' %}?guard={{ attendance.payroll_guard_id }}&year={{ attendance.payroll_year }}&month={{ attendance.payroll_month }}" class="btn btn-sm btn-outline-success">
-                                            <i class="fa fa-money-bill-wave"></i> Salary
-                                        </a>
+                                        <span class="badge bg-success">0</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if attendance.check_out_time %}
+                                        {% if self_service_guard %}
+                                            <a href="{% url 'salary_payslip_from_attendance' attendance.payroll_guard_id attendance.payroll_year attendance.payroll_month %}" class="btn btn-sm btn-outline-success">
+                                                <i class="fa fa-file-invoice-dollar"></i> Payslip
+                                            </a>
+                                        {% else %}
+                                            <a href="{% url 'salary_list' %}?guard={{ attendance.payroll_guard_id }}&year={{ attendance.payroll_year }}&month={{ attendance.payroll_month }}" class="btn btn-sm btn-outline-success">
+                                                <i class="fa fa-money-bill-wave"></i> Salary
+                                            </a>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-warning text-dark">Checkout required</span>
                                     {% endif %}
                                 </td>
                             </tr>
                         {% empty %}
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">No attendance records yet.</td>
+                                <td colspan="11" class="text-center text-muted py-4">No attendance records yet.</td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -214,27 +220,31 @@
 
 <script>
     document.addEventListener("DOMContentLoaded", function () {
+        const deviceSelect = document.getElementById("device");
+        const siteSelect = document.getElementById("site_location");
         const actionSelect = document.getElementById("action");
-        const supervisorSelect = document.getElementById("swiped_by_supervisor");
         const rfidCardWrapper = document.getElementById("rfid-card-wrapper");
         const rfidCardSelect = document.getElementById("card_id");
         const replacementWrapper = document.getElementById("replacement-wrapper");
         const replacementSelect = document.getElementById("replacement_card_id");
+        const optionsUrl = "{% url 'iot_swipe_options' %}";
 
-        function syncCardsForSupervisor() {
-            const supervisorId = supervisorSelect.value;
-            [rfidCardSelect, replacementSelect].forEach(function (select) {
-                Array.from(select.options).forEach(function (option) {
-                    const optionSupervisorId = option.dataset.supervisorId;
-                    const isPlaceholder = !option.value;
-                    const canShow = isPlaceholder || !supervisorId || optionSupervisorId === supervisorId;
-                    option.hidden = !canShow;
-                    option.disabled = !canShow;
-                });
+        if (!deviceSelect || !siteSelect || !actionSelect || !rfidCardSelect || !replacementSelect) {
+            return;
+        }
 
-                if (select.selectedOptions.length && select.selectedOptions[0].disabled) {
-                    select.value = "";
-                }
+        function setOptions(select, placeholder, items, valueKey, labelKey) {
+            select.innerHTML = "";
+            const placeholderOption = document.createElement("option");
+            placeholderOption.value = "";
+            placeholderOption.textContent = placeholder;
+            select.appendChild(placeholderOption);
+
+            items.forEach(function (item) {
+                const option = document.createElement("option");
+                option.value = valueKey ? item[valueKey] : item;
+                option.textContent = labelKey ? item[labelKey] : item;
+                select.appendChild(option);
             });
         }
 
@@ -249,12 +259,55 @@
             if (!needsReplacement) {
                 replacementSelect.value = "";
             }
-            syncCardsForSupervisor();
         }
 
+        function resetDeviceOptions() {
+            setOptions(siteSelect, "Select IoT device first", [], null, null);
+            setOptions(rfidCardSelect, "Select IoT device first", [], "value", "label");
+            setOptions(replacementSelect, "Select IoT device first", [], "value", "label");
+        }
+
+        function loadDeviceOptions() {
+            const deviceId = deviceSelect.value;
+            if (!deviceId) {
+                resetDeviceOptions();
+                return;
+            }
+
+            setOptions(siteSelect, "Loading sites...", [], null, null);
+            setOptions(rfidCardSelect, "Loading RFID cards...", [], "value", "label");
+            setOptions(replacementSelect, "Loading RFID cards...", [], "value", "label");
+
+            fetch(`${optionsUrl}?device=${encodeURIComponent(deviceId)}`, {
+                headers: {"X-Requested-With": "XMLHttpRequest"}
+            })
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    const sites = data.sites || [];
+                    const cards = data.cards || [];
+                    setOptions(siteSelect, sites.length ? "Use selected device site" : "No site found for this device", sites, null, null);
+                    setOptions(rfidCardSelect, cards.length ? "Select guard RFID card" : "No deployed guards for this device today", cards, "value", "label");
+                    setOptions(replacementSelect, cards.length ? "Scan/select replacement RFID card" : "No deployed guards for this device today", cards, "value", "label");
+                    if (sites.length === 1) {
+                        siteSelect.value = sites[0];
+                    }
+                })
+                .catch(function () {
+                    setOptions(siteSelect, "Could not load sites", [], null, null);
+                    setOptions(rfidCardSelect, "Could not load RFID cards", [], "value", "label");
+                    setOptions(replacementSelect, "Could not load RFID cards", [], "value", "label");
+                });
+        }
+
+        deviceSelect.addEventListener("change", loadDeviceOptions);
         actionSelect.addEventListener("change", syncReplacementField);
-        supervisorSelect.addEventListener("change", syncReplacementField);
+        resetDeviceOptions();
         syncReplacementField();
+        if (deviceSelect.value) {
+            loadDeviceOptions();
+        }
     });
 </script>
 {% endblock %}
+
+

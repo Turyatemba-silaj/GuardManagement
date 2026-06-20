@@ -15,11 +15,13 @@
             --sidebar-bg: #1f2d3d;
             --sidebar-bg-dark: #182433;
             --sidebar-active: #1abb9c;
+            --app-font: "Times New Roman", Times, serif;
         }
 
         body {
             background: whitesmoke;
             color: #243447;
+            font-family: var(--app-font);
             font-size: 0.9rem;
             min-height: 100vh;
         }
@@ -50,6 +52,7 @@
         .form-select,
         .table,
         .dropdown-menu {
+            font-family: var(--app-font);
             font-size: 0.88rem;
         }
 
@@ -320,6 +323,7 @@
         }
 
         .table {
+            font-family: var(--app-font);
             font-size: 0.84rem;
             line-height: 1.25;
             margin-bottom: 0;
@@ -430,7 +434,7 @@
     <div class="app-layout">
         <aside class="sidebar">
             <div class="d-flex align-items-center justify-content-between">
-                <a class="sidebar-brand flex-grow-1" href="{% if nav_permissions.can_dashboard %}{% url 'dashboard' %}{% elif nav_permissions.can_guard_self_service %}{% url 'iot_swipe_attendance' %}{% elif nav_permissions.can_client_self_service %}{% url 'client_communication_list' %}{% else %}{% url 'advance_request_list' %}{% endif %}">
+                <a class="sidebar-brand flex-grow-1" href="{% if nav_permissions.can_dashboard %}{% url 'dashboard' %}{% else %}{% url 'iot_swipe_attendance' %}{% endif %}">
                     <span class="brand-mark"><i class="fa fa-shield-halved"></i></span>
                     <span>
                         <span class="brand-title">Guard Management</span>
@@ -451,15 +455,12 @@
 
                 {% if nav_permissions.can_guard_self_service %}
                 <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#guardSelfServiceModule" aria-controls="guardSelfServiceModule" aria-expanded="{% if current_url in 'advance_request_remote iot_swipe_attendance salary_list salary_payslip_from_attendance' %}true{% else %}false{% endif %}">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#guardSelfServiceModule" aria-controls="guardSelfServiceModule" aria-expanded="{% if current_url in 'iot_swipe_attendance salary_list salary_payslip_from_attendance' %}true{% else %}false{% endif %}">
                         <span class="module-title"><i class="fa fa-user-shield"></i> My Services</span>
                         <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="guardSelfServiceModule" class="collapse {% if current_url in 'advance_request_remote iot_swipe_attendance salary_list salary_payslip_from_attendance' %}show{% endif %}">
+                    <div id="guardSelfServiceModule" class="collapse {% if current_url in 'iot_swipe_attendance salary_list salary_payslip_from_attendance' %}show{% endif %}">
                         <div class="module-menu">
-                            <a class="sidebar-link {% if current_url == 'advance_request_remote' %}active{% endif %}" href="{% url 'advance_request_remote' %}">
-                                <i class="fa fa-hand-holding-dollar"></i> Request Advance
-                            </a>
                             <a class="sidebar-link {% if current_url == 'iot_swipe_attendance' %}active{% endif %}" href="{% url 'iot_swipe_attendance' %}">
                                 <i class="fa fa-id-card"></i> My Swipe Attendance
                             </a>
@@ -471,38 +472,19 @@
                 </div>
                 {% endif %}
 
-                {% if nav_permissions.can_client_self_service %}
-                <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#clientSelfServiceModule" aria-controls="clientSelfServiceModule" aria-expanded="{% if current_url in 'client_communication_list client_communication_add' %}true{% else %}false{% endif %}">
-                        <span class="module-title"><i class="fa fa-building-user"></i> My Services</span>
-                        <i class="fa fa-chevron-down module-chevron"></i>
-                    </button>
-                    <div id="clientSelfServiceModule" class="collapse {% if current_url in 'client_communication_list client_communication_add' %}show{% endif %}">
-                        <div class="module-menu">
-                            <a class="sidebar-link {% if current_url in 'client_communication_list client_communication_add' %}active{% endif %}" href="{% url 'client_communication_list' %}">
-                                <i class="fa fa-comments"></i> Requests & Feedback
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-
                 {% if nav_permissions.can_people %}
                 <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#peopleModule" aria-controls="peopleModule" aria-expanded="{% if current_url in 'user_list user_add user_edit user_delete supervisor_list supervisor_add supervisor_edit supervisor_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}true{% else %}false{% endif %}">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#peopleModule" aria-controls="peopleModule" aria-expanded="{% if current_url in 'user_list user_add user_edit user_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}true{% else %}false{% endif %}">
                         <span class="module-title"><i class="fa fa-users"></i> People</span>
                         <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="peopleModule" class="collapse {% if current_url in 'user_list user_add user_edit user_delete supervisor_list supervisor_add supervisor_edit supervisor_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}show{% endif %}">
+                    <div id="peopleModule" class="collapse {% if current_url in 'user_list user_add user_edit user_delete guard_list guard_add guard_edit guard_delete client_list client_add client_edit client_delete' %}show{% endif %}">
                         <div class="module-menu">
                             {% if nav_permissions.can_users %}
                                 <a class="sidebar-link {% if current_url in 'user_list user_add user_edit user_delete' %}active{% endif %}" href="{% url 'user_list' %}">
                                     <i class="fa fa-user-gear"></i> Users
                                 </a>
                             {% endif %}
-                            <a class="sidebar-link {% if current_url in 'supervisor_list supervisor_add supervisor_edit supervisor_delete' %}active{% endif %}" href="{% url 'supervisor_list' %}">
-                                <i class="fa fa-user-tie"></i> Supervisors
-                            </a>
                             <a class="sidebar-link {% if current_url in 'guard_list guard_add guard_edit guard_delete' %}active{% endif %}" href="{% url 'guard_list' %}">
                                 <i class="fa fa-user-shield"></i> Guards
                             </a>
@@ -516,14 +498,20 @@
 
                 {% if nav_permissions.can_operations %}
                 <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#operationsModule" aria-controls="operationsModule" aria-expanded="{% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}true{% else %}false{% endif %}">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#operationsModule" aria-controls="operationsModule" aria-expanded="{% if current_url in 'contract_list contract_add contract_edit contract_delete deployment_list deployment_add deployment_edit deployment_delete deployment_guard_list deployment_guard_add deployment_guard_edit deployment_guard_delete program_guard shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}true{% else %}false{% endif %}">
                         <span class="module-title"><i class="fa fa-briefcase"></i> Operations</span>
                         <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="operationsModule" class="collapse {% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}show{% endif %}">
+                    <div id="operationsModule" class="collapse {% if current_url in 'contract_list contract_add contract_edit contract_delete deployment_list deployment_add deployment_edit deployment_delete deployment_guard_list deployment_guard_add deployment_guard_edit deployment_guard_delete program_guard shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template asset_list asset_add asset_edit asset_delete' %}show{% endif %}">
                         <div class="module-menu">
+                            <a class="sidebar-link {% if current_url in 'contract_list contract_add contract_edit contract_delete' %}active{% endif %}" href="{% url 'contract_list' %}">
+                                <i class="fa fa-file-contract"></i> Contracts
+                            </a>
                             <a class="sidebar-link {% if current_url in 'deployment_list deployment_add deployment_edit deployment_delete program_guard' %}active{% endif %}" href="{% url 'deployment_list' %}">
                                 <i class="fa fa-location-dot"></i> Deployments
+                            </a>
+                            <a class="sidebar-link {% if current_url in 'deployment_guard_list deployment_guard_add deployment_guard_edit deployment_guard_delete' %}active{% endif %}" href="{% url 'deployment_guard_list' %}">
+                                <i class="fa fa-user-shield"></i> Guard Deployment
                             </a>
                             <a class="sidebar-link {% if current_url in 'shift_list shift_add shift_edit shift_delete shift_import schedule_csv_template' %}active{% endif %}" href="{% url 'shift_list' %}">
                                 <i class="fa fa-calendar-days"></i> Shifts
@@ -538,39 +526,20 @@
 
                 {% if nav_permissions.can_payroll_cases %}
                 <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#payrollCasesModule" aria-controls="payrollCasesModule" aria-expanded="{% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual advance_request_list advance_request_add advance_request_edit advance_request_delete incident_list incident_add incident_edit incident_delete incident_pdf_report disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}true{% else %}false{% endif %}">
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#payrollCasesModule" aria-controls="payrollCasesModule" aria-expanded="{% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual incident_list incident_add incident_edit incident_delete incident_pdf_report' %}true{% else %}false{% endif %}">
                         <span class="module-title"><i class="fa fa-folder-open"></i> Payroll & Cases</span>
                         <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="payrollCasesModule" class="collapse {% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual advance_request_list advance_request_add advance_request_edit advance_request_delete incident_list incident_add incident_edit incident_delete incident_pdf_report disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}show{% endif %}">
+                    <div id="payrollCasesModule" class="collapse {% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual incident_list incident_add incident_edit incident_delete incident_pdf_report' %}show{% endif %}">
                         <div class="module-menu">
                             {% if nav_permissions.can_salaries %}
                                 <a class="sidebar-link {% if current_url in 'salary_list salary_add salary_edit salary_delete salary_payslip_general salary_payslip_individual' %}active{% endif %}" href="{% url 'salary_list' %}">
                                     <i class="fa fa-money-bill-wave"></i> Salaries
                                 </a>
                             {% endif %}
-                            {% if nav_permissions.can_advances %}
-                                <a class="sidebar-link {% if current_url in 'advance_request_list advance_request_add advance_request_edit advance_request_delete' %}active{% endif %}" href="{% url 'advance_request_list' %}">
-                                    <i class="fa fa-hand-holding-dollar"></i> Advances
-                                    {% if pending_advance_notifications %}
-                                        <span class="badge bg-danger ms-2">{{ pending_advance_notifications }}</span>
-                                    {% endif %}
-                                </a>
-                            {% endif %}
                             {% if nav_permissions.can_cases %}
-                                {% if nav_permissions.can_client_communications %}
-                                    <a class="sidebar-link {% if current_url in 'client_communication_list client_communication_add' %}active{% endif %}" href="{% url 'client_communication_list' %}">
-                                        <i class="fa fa-comments"></i> Client Communication
-                                        {% if pending_client_notifications %}
-                                            <span class="badge bg-danger ms-2">{{ pending_client_notifications }}</span>
-                                        {% endif %}
-                                    </a>
-                                {% endif %}
                                 <a class="sidebar-link {% if current_url in 'incident_list incident_add incident_edit incident_delete incident_pdf_report' %}active{% endif %}" href="{% url 'incident_list' %}">
                                     <i class="fa fa-triangle-exclamation"></i> Incidents
-                                </a>
-                                <a class="sidebar-link {% if current_url in 'disciplinary_action_list disciplinary_action_add disciplinary_action_edit disciplinary_action_delete' %}active{% endif %}" href="{% url 'disciplinary_action_list' %}">
-                                    <i class="fa fa-scale-balanced"></i> Disciplinary
                                 </a>
                             {% endif %}
                         </div>
@@ -580,18 +549,12 @@
 
                 {% if nav_permissions.can_reports_devices %}
                 <div class="sidebar-module">
-                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#reportsDevicesModule" aria-controls="reportsDevicesModule" aria-expanded="{% if current_url in 'attendance_query_report schedule_report schedule_report_csv_export rfid_card_list rfid_card_add rfid_card_edit rfid_card_delete iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}true{% else %}false{% endif %}">
-                        <span class="module-title"><i class="fa fa-chart-simple"></i> Reports & Devices</span>
+                    <button class="module-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#reportsDevicesModule" aria-controls="reportsDevicesModule" aria-expanded="{% if current_url in 'rfid_card_list rfid_card_add rfid_card_edit rfid_card_delete iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}true{% else %}false{% endif %}">
+                        <span class="module-title"><i class="fa fa-microchip"></i> Devices</span>
                         <i class="fa fa-chevron-down module-chevron"></i>
                     </button>
-                    <div id="reportsDevicesModule" class="collapse {% if current_url in 'attendance_query_report schedule_report schedule_report_csv_export rfid_card_list rfid_card_add rfid_card_edit rfid_card_delete iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}show{% endif %}">
+                    <div id="reportsDevicesModule" class="collapse {% if current_url in 'rfid_card_list rfid_card_add rfid_card_edit rfid_card_delete iot_device_list iot_device_add iot_device_edit iot_device_delete iot_swipe_attendance audit_log_list' %}show{% endif %}">
                         <div class="module-menu">
-                            <a class="sidebar-link {% if current_url == 'attendance_query_report' %}active{% endif %}" href="{% url 'attendance_query_report' %}">
-                                <i class="fa fa-chart-column"></i> Attendance Report
-                            </a>
-                            <a class="sidebar-link {% if current_url in 'schedule_report schedule_report_csv_export' %}active{% endif %}" href="{% url 'schedule_report' %}">
-                                <i class="fa fa-table-list"></i> Schedule Report
-                            </a>
                             {% if nav_permissions.can_devices %}
                                 <a class="sidebar-link {% if current_url in 'rfid_card_list rfid_card_add rfid_card_edit rfid_card_delete' %}active{% endif %}" href="{% url 'rfid_card_list' %}">
                                     <i class="fa fa-id-card"></i> RFID Cards

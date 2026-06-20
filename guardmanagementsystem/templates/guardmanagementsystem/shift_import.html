@@ -7,6 +7,9 @@
         <p>Upload a CSV or XLSX schedule to create scheduled guard deployments, shifts, and attendance.</p>
     </div>
     <div class="page-actions d-flex gap-2">
+        <a href="{% url 'schedule_xlsx_template' %}" class="btn btn-success">
+            <i class="fa fa-file-excel"></i> Download Excel Roster
+        </a>
         <a href="{% url 'schedule_csv_template' %}" class="btn btn-outline-success">
             <i class="fa fa-file-csv"></i> Download CSV Template
         </a>

@@ -1,0 +1,85 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Guard Deployment</h2>
+        <p class="text-muted mb-0">Assign guards to active deployment sites</p>
+    </div>
+
+    <a href="{% url 'deployment_guard_add' %}" class="btn btn-primary">
+        <i class="fa fa-plus"></i> Add Guard Deployment
+    </a>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Guard Deployment">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Guard</th>
+                    <th>Client</th>
+                    <th>Contract</th>
+                    <th>Location</th>
+                    <th>Deployment Date</th>
+                    <th>Check In</th>
+                    <th>Check Out</th>
+                    <th>Guard Deployment Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for assignment in deployment_guards %}
+                    <tr>
+                        <td>{{ assignment.deployment_guard_id }}</td>
+                        <td>
+                            {{ assignment.guard.guard_number|default:"-" }}
+                            {% if assignment.guard.full_name %}
+                                - {{ assignment.guard.full_name }}
+                            {% endif %}
+                        </td>
+                        <td>{{ assignment.deployment.client.client_name|default:"-" }}</td>
+                        <td>{{ assignment.deployment.contract.contract_number|default:"-" }}</td>
+                        <td>{{ assignment.deployment.site_location }}</td>
+                        <td>{{ assignment.deployment_date|date:"M d, Y" }}</td>
+                        <td>{{ assignment.check_in_time|time:"H:i"|default:"-" }}</td>
+                        <td>{{ assignment.check_out_time|time:"H:i"|default:"-" }}</td>
+                        <td>
+                            {% if assignment.status == "On Site" %}
+                                <span class="badge bg-success">{{ assignment.status }}</span>
+                            {% elif assignment.status == "Available for Deployment" %}
+                                <span class="badge bg-primary">{{ assignment.status }}</span>
+                            {% elif assignment.status == "Completed" %}
+                                <span class="badge bg-secondary">{{ assignment.status }}</span>
+                            {% elif assignment.status == "Cancelled" %}
+                                <span class="badge bg-danger">Cancelled</span>
+                            {% else %}
+                                <span class="badge bg-info">{{ assignment.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="action-buttons">
+                                <a href="{% url 'deployment_guard_edit' assignment.deployment_guard_id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fa fa-pen"></i>
+                                </a>
+
+                                <a href="{% url 'deployment_guard_delete' assignment.deployment_guard_id %}" class="btn btn-sm btn-outline-danger">
+                                    <i class="fa fa-trash"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">
+                            No guard deployments found.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

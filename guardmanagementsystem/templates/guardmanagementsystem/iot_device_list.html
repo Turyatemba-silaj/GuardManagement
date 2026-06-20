@@ -20,7 +20,7 @@
                     <th>Device Code</th>
                     <th>API Key</th>
                     <th>Client</th>
-                    <th>Guard Number</th>
+                    <th>Assigned Guards</th>
                     <th>Site Location</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
@@ -35,7 +35,11 @@
                         <td>{{ device.client|default:"-" }}</td>
                         <td>
                             {% if device.deployment %}
-                                {{ device.deployment.guard.guard_number|default:"-" }} - {{ device.deployment.guard.full_name }}
+                                {% for assignment in device.deployment.deployment_guards.all %}
+                                    <div>{{ assignment.guard.guard_number|default:"-" }} - {{ assignment.guard.full_name }}</div>
+                                {% empty %}
+                                    -
+                                {% endfor %}
                             {% else %}
                                 -
                             {% endif %}

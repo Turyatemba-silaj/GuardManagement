@@ -36,7 +36,7 @@ class UserCreateForm(UserCreationForm):
     is_active = forms.BooleanField(required=False, initial=True)
     is_staff = forms.BooleanField(required=False)
     is_superuser = forms.BooleanField(required=False)
-    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=False)
+    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=True)
 
     class Meta:
         model = User
@@ -55,14 +55,9 @@ class UserCreateForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["role"].queryset = Group.objects.filter(
-            name__in=[
-                "Admin",
-                "Supervisor",
-                "Guard",
-                "Client",
-            ]
-        ).order_by("name")
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.fields["role"].queryset = Group.objects.filter(pk=admin_group.pk)
+        self.fields["role"].initial = admin_group
         for field in self.fields.values():
             field.widget.attrs.update({"class": "form-control"})
 
@@ -74,16 +69,18 @@ class UserCreateForm(UserCreationForm):
         user.is_active = self.cleaned_data.get("is_active", False)
         user.is_staff = self.cleaned_data.get("is_staff", False)
         user.is_superuser = self.cleaned_data.get("is_superuser", False)
+        role = self.cleaned_data.get("role")
+        user.is_staff = True
+        user.is_superuser = True
         if commit:
             user.save()
-            role = self.cleaned_data.get("role")
             if role:
                 user.groups.set([role])
         return user
 
 
 class UserEditForm(forms.ModelForm):
-    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=False)
+    role = forms.ModelChoiceField(queryset=Group.objects.none(), required=True)
 
     class Meta:
         model = User
@@ -100,27 +97,20 @@ class UserEditForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["role"].queryset = Group.objects.filter(
-            name__in=[
-                "Admin",
-                "Supervisor",
-                "Guard",
-                "Client",
-            ]
-        ).order_by("name")
+        admin_group, _ = Group.objects.get_or_create(name="Admin")
+        self.fields["role"].queryset = Group.objects.filter(pk=admin_group.pk)
+        self.fields["role"].initial = admin_group
         self.fields["role"].widget.attrs.update({"class": "form-control"})
-        role = self.instance.groups.filter(name__in=self.fields["role"].queryset.values_list("name", flat=True)).first()
-        if role:
-            self.fields["role"].initial = role
 
     def save(self, commit=True):
-        user = super().save(commit=commit)
+        user = super().save(commit=False)
+        role = self.cleaned_data.get("role")
+        user.is_staff = True
+        user.is_superuser = True
         if commit:
-            role = self.cleaned_data.get("role")
-            if role:
-                user.groups.set([role])
-            else:
-                user.groups.clear()
+            user.save()
+            self.save_m2m()
+            user.groups.set([role])
         return user
 
 
@@ -129,10 +119,6 @@ class EmailOrUsernameAuthenticationForm(AuthenticationForm):
         username = self.cleaned_data.get("username", "").strip()
         if username and "@" in username:
             email_users = User.objects.filter(email__iexact=username)
-            supervisor_user = email_users.filter(username__icontains="supervisor").first()
-            if supervisor_user:
-                return supervisor_user.username
-
             if not User.objects.filter(username__iexact=username).exists():
                 user = email_users.first()
                 if user:
@@ -147,9 +133,6 @@ class GuardForm(forms.ModelForm):
 
         widgets = {
             'rfid_card': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'supervisor': forms.Select(attrs={
                 'class': 'form-control'
             }),
             'full_name': forms.TextInput(attrs={
@@ -216,9 +199,9 @@ class IoTDeviceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['client'].queryset = Client.objects.order_by('client_name')
-        self.fields['deployment'].queryset = Deployment.objects.select_related('client', 'guard').order_by('client__client_name', 'site_location', 'guard__full_name')
+        self.fields['deployment'].queryset = Deployment.objects.select_related('client').order_by('client__client_name', 'site_location')
         self.fields['deployment'].label_from_instance = (
-            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location} - {deployment.guard.full_name}"
+            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location}"
         )
         self.fields['device_name'].required = False
         self.fields['device_code'].required = False
@@ -266,44 +249,12 @@ class IoTDeviceForm(forms.ModelForm):
             }),
         }
 
-class SupervisorForm(forms.ModelForm):
-    class Meta:
-        model = Supervisor
-        exclude = ['user']
-
-        widgets = {
-            'full_name': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter supervisor full name'
-            }),
-            'phone': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter phone number'
-            }),
-            'email': forms.EmailInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter email address'
-            }),
-            'designation': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter designation'
-            }),
-            'daily_rate': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Supervisor daily rate',
-                'step': '0.01'
-            }),
-        }
-
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client
-        fields ='__all__'
+        exclude = ['user']
 
         widgets = {
-            'user': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'client_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter client name'
@@ -328,50 +279,83 @@ class ClientForm(forms.ModelForm):
         }
 
 
-class ClientCommunicationForm(forms.ModelForm):
-    def __init__(self, *args, client=None, **kwargs):
+class ContractForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if client:
-            self.instance.client = client
+        self.fields['client'].queryset = Client.objects.order_by('client_name')
+
+        selected_device_id = self.data.get('iot_device') if self.is_bound else self.instance.iot_device_id
+        device_queryset = IoTDevice.objects.select_related('client').filter(is_active=True)
+
+        if selected_device_id:
+            device_queryset = IoTDevice.objects.select_related('client').filter(
+                models.Q(pk=selected_device_id) | models.Q(pk__in=device_queryset.values('pk'))
+            )
+
+        self.fields['iot_device'].queryset = device_queryset.order_by(
+            'client__client_name',
+            'site_location',
+            'device_name',
+        )
+        self.fields['iot_device'].label_from_instance = (
+            lambda device: f"{device.client.client_name if device.client else 'Unassigned'} - {device.site_location}"
+        )
+        self.fields['iot_device'].help_text = "Pick an active IoT device from the IoT Device table."
+        self.fields['contract_number'].required = False
+        self.fields['contract_number'].help_text = "Leave blank to generate the next contract number."
 
     class Meta:
-        model = ClientCommunication
-        fields = ['message_type', 'subject', 'location', 'description']
-        widgets = {
-            'message_type': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'subject': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter subject'
-            }),
-            'location': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Site or location, if applicable'
-            }),
-            'description': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 5,
-                'placeholder': 'Describe the service request, complaint, feedback, incident, or message'
-            }),
-        }
+        model = Contract
+        fields = [
+            'client',
+            'contract_number',
+            'number_of_guards',
+            'day_shift_guards',
+            'night_shift_guards',
+            'charge_per_guard',
+            'contract_type',
+            'location',
+            'iot_device',
+            'start_date',
+            'end_date',
+            'status',
+            'terms',
+        ]
 
-class DeploymentForm(forms.ModelForm):
-    class Meta:
-        model = Deployment
-        fields = '__all__'
-            
-        
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'client': forms.Select(attrs={
                 'class': 'form-control'
             }),
-            'site_location': forms.TextInput(attrs={
+            'contract_number': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Enter site location'
+                'placeholder': 'Auto-generated if blank'
+            }),
+            'number_of_guards': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1'
+            }),
+            'day_shift_guards': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            }),
+            'night_shift_guards': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            }),
+            'charge_per_guard': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter monthly charge per guard',
+                'step': '0.01'
+            }),
+            'contract_type': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'location': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Client site or deployment location'
+            }),
+            'iot_device': forms.Select(attrs={
+                'class': 'form-control'
             }),
             'start_date': forms.DateInput(attrs={
                 'class': 'form-control',
@@ -384,18 +368,203 @@ class DeploymentForm(forms.ModelForm):
             'status': forms.Select(attrs={
                 'class': 'form-control'
             }),
-            'replacement_guard': forms.Select(attrs={
+            'terms': forms.Textarea(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter contract terms, billing notes, or service conditions',
+                'rows': 4
+            }),
+        }
+
+
+class DeploymentForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['client'].queryset = Client.objects.order_by('client_name')
+        used_contract_ids = Deployment.objects.exclude(contract__isnull=True)
+        if self.instance and self.instance.pk:
+            used_contract_ids = used_contract_ids.exclude(pk=self.instance.pk)
+        used_contract_ids = used_contract_ids.values_list('contract_id', flat=True)
+
+        self.fields['contract'].queryset = Contract.objects.select_related('client').exclude(
+            status__in=['Expired', 'Terminated']
+        ).exclude(
+            pk__in=used_contract_ids
+        ).order_by(
+            'client__client_name',
+            'contract_number',
+        )
+        self.fields['contract'].required = False
+        self.fields['contract'].label_from_instance = (
+            lambda contract: f"{contract.contract_number} - {contract.client.client_name} - {contract.location or 'No location'} ({contract.number_of_guards} guards: D {contract.day_shift_guards}, N {contract.night_shift_guards})"
+        )
+        for field_name in ['client', 'site_location', 'start_date', 'end_date']:
+            self.fields[field_name].required = False
+        self.fields['client'].help_text = "Auto-filled from the selected contract."
+        self.fields['site_location'].help_text = "Auto-filled from the selected contract location when left blank."
+        self.fields['start_date'].help_text = "Auto-filled from the contract start date when left blank."
+        self.fields['end_date'].help_text = "Auto-filled from the contract end date when left blank."
+
+    def clean(self):
+        cleaned_data = super().clean()
+        client = cleaned_data.get('client')
+        contract = cleaned_data.get('contract')
+
+        if contract:
+            if client and contract.client_id != client.client_id:
+                raise forms.ValidationError("Selected contract does not belong to the selected client.")
+
+            duplicate = Deployment.objects.filter(contract=contract)
+            if self.instance.pk:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+            if duplicate.exists():
+                self.add_error('contract', "This contract is already linked to another deployment.")
+
+            cleaned_data['client'] = contract.client
+
+            if not cleaned_data.get('site_location'):
+                cleaned_data['site_location'] = contract.location
+            if not cleaned_data.get('start_date'):
+                cleaned_data['start_date'] = contract.start_date
+            if not cleaned_data.get('end_date'):
+                cleaned_data['end_date'] = contract.end_date
+        else:
+            required_fields = {
+                'client': 'Select a client or choose a contract.',
+                'site_location': 'Enter a site location or choose a contract.',
+                'start_date': 'Enter a start date or choose a contract.',
+            }
+            for field_name, message in required_fields.items():
+                if not cleaned_data.get(field_name):
+                    self.add_error(field_name, message)
+
+        return cleaned_data
+
+    class Meta:
+        model = Deployment
+        fields = [
+            'client',
+            'contract',
+            'site_location',
+            'shift',
+            'start_date',
+            'end_date',
+            'status',
+        ]
+            
+        
+        widgets = {
+            'client': forms.Select(attrs={
                 'class': 'form-control'
             }),
-            'absence_reason': forms.Textarea(attrs={
+            'contract': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'site_location': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Reason when guard is not present',
-                'rows': 3
+                'placeholder': 'Enter site location'
+            }),
+            'shift': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'start_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'end_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+        }
+
+
+class DeploymentGuardForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['deployment'].queryset = Deployment.objects.select_related('client', 'contract').order_by(
+            'client__client_name',
+            'site_location',
+        )
+        self.fields['deployment'].label_from_instance = (
+            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location} ({deployment.status})"
+        )
+        self.fields['guard'].queryset = Guard.objects.filter(status="Active").order_by('full_name')
+        self.fields['deployment_date'].label = "Deployment Date"
+        self.fields['check_in_time'].label = "Check In"
+        self.fields['check_out_time'].label = "Check Out"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        deployment = cleaned_data.get('deployment')
+        guard = cleaned_data.get('guard')
+        deployment_date = cleaned_data.get('deployment_date')
+        check_in_time = cleaned_data.get('check_in_time')
+        check_out_time = cleaned_data.get('check_out_time')
+
+        if check_in_time and check_out_time and check_out_time < check_in_time:
+            raise forms.ValidationError("Guard deployment check out cannot be before check in.")
+
+        if deployment and deployment_date:
+            if deployment_date < deployment.start_date:
+                raise forms.ValidationError("Guard deployment date cannot be before the deployment start date.")
+
+            if deployment.end_date and deployment_date > deployment.end_date:
+                raise forms.ValidationError("Guard deployment date cannot be after the deployment end date.")
+
+        if deployment and guard and deployment_date:
+            duplicate = DeploymentGuard.objects.filter(
+                deployment=deployment,
+                guard=guard,
+                deployment_date=deployment_date,
+            )
+            if self.instance.pk:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+
+            if duplicate.exists():
+                raise forms.ValidationError("This guard is already assigned to this deployment date.")
+
+        return cleaned_data
+
+    class Meta:
+        model = DeploymentGuard
+        fields = [
+            'deployment',
+            'guard',
+            'deployment_date',
+            'check_in_time',
+            'check_out_time',
+        ]
+
+        widgets = {
+            'deployment': forms.Select(attrs={
+                'class': 'form-control'
+            }),
+            'deployment_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'check_in_time': forms.TimeInput(attrs={
+                'class': 'form-control',
+                'type': 'time'
+            }),
+            'check_out_time': forms.TimeInput(attrs={
+                'class': 'form-control',
+                'type': 'time'
             }),
         }
 
 
 class ProgramGuardForm(forms.ModelForm):
+    guard = forms.ModelChoiceField(
+        queryset=Guard.objects.filter(status="Active"),
+        required=True,
+        label="Main Guard",
+        widget=forms.Select(attrs={
+            'class': 'form-control'
+        })
+    )
     additional_guards = forms.ModelMultipleChoiceField(
         queryset=Guard.objects.filter(status="Active"),
         required=False,
@@ -460,18 +629,18 @@ class ProgramGuardForm(forms.ModelForm):
 
     class Meta:
         model = Deployment
-        fields = ['guard', 'client', 'site_location', 'start_date', 'end_date']
+        fields = ['client', 'site_location', 'start_date', 'end_date']
 
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'client': forms.Select(attrs={
                 'class': 'form-control'
             }),
             'site_location': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter site location'
+            }),
+            'shift': forms.Select(attrs={
+                'class': 'form-control'
             }),
             'start_date': forms.DateInput(attrs={
                 'class': 'form-control',
@@ -490,9 +659,6 @@ class AssetForm(forms.ModelForm):
         fields = '__all__'
 
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'asset_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter asset name'
@@ -514,79 +680,6 @@ class AssetForm(forms.ModelForm):
             }),
         }
 
-
-class AttendanceForm(forms.ModelForm):
-    def clean(self):
-        cleaned_data = super().clean()
-        guard = cleaned_data.get('guard')
-        attendance_date = cleaned_data.get('attendance_date')
-        replacement_guard = cleaned_data.get('replacement_guard')
-        status = cleaned_data.get('status')
-        absence_reason = cleaned_data.get('absence_reason')
-
-        if guard and attendance_date:
-            duplicate = Attendance.objects.filter(guard=guard, attendance_date=attendance_date)
-            if self.instance.pk:
-                duplicate = duplicate.exclude(pk=self.instance.pk)
-
-            if duplicate.exists():
-                raise forms.ValidationError("This guard already has attendance recorded for this date.")
-
-            active_deployment = Deployment.objects.filter(
-                guard=guard,
-                status="Active",
-                start_date__lte=attendance_date,
-            ).filter(
-                models.Q(end_date__isnull=True) | models.Q(end_date__gte=attendance_date)
-            ).exists()
-
-            if not active_deployment:
-                raise forms.ValidationError("This guard is not actively scheduled on any client site for this date.")
-
-        if replacement_guard and guard and replacement_guard == guard:
-            raise forms.ValidationError("Replacement guard cannot be the same as the scheduled guard.")
-
-        if replacement_guard and attendance_date:
-            replacement_active = Deployment.objects.filter(
-                guard=replacement_guard,
-                status="Active",
-                start_date__lte=attendance_date,
-            ).filter(
-                models.Q(end_date__isnull=True) | models.Q(end_date__gte=attendance_date)
-            ).exists()
-
-            if not replacement_active:
-                raise forms.ValidationError("Replacement guard is not actively scheduled on any client site for this date.")
-
-        if status == "Absent" and not absence_reason and not replacement_guard:
-            raise forms.ValidationError("Enter an absence reason or select a replacement guard.")
-
-        return cleaned_data
-
-    class Meta:
-        model = Attendance
-        fields = '__all__'
-        
-        widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'attendance_date': forms.DateInput(attrs={
-                'class': 'form-control',
-                'type': 'date'
-            }),
-            'check_in_time': forms.TimeInput(attrs={
-                'class': 'form-control',
-                'type': 'time'
-            }),
-            'check_out_time': forms.TimeInput(attrs={
-                'class': 'form-control',
-                'type': 'time'
-            }),
-            'status': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-        }
 
 class ShiftForm(forms.ModelForm):
     def clean(self):
@@ -610,12 +703,13 @@ class ShiftForm(forms.ModelForm):
             if duplicate.exists():
                 raise forms.ValidationError("This guard already has a shift on this date.")
 
-            active_deployment = Deployment.objects.filter(
+            active_deployment = DeploymentGuard.objects.filter(
                 guard=guard,
-                status="Active",
-                start_date__lte=start_time,
+                deployment_date=start_time,
+                deployment__status__in=["Active", "Running", "On Deployment", "Available", "Has No Deployment"],
+                deployment__start_date__lte=start_time,
             ).filter(
-                models.Q(end_date__isnull=True) | models.Q(end_date__gte=start_time)
+                models.Q(deployment__end_date__isnull=True) | models.Q(deployment__end_date__gte=start_time)
             ).exists()
 
             if not active_deployment:
@@ -628,9 +722,6 @@ class ShiftForm(forms.ModelForm):
         fields = '__all__'
 
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'shift_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Example: Morning Shift'
@@ -655,7 +746,6 @@ class SalaryForm(forms.ModelForm):
         fields = [
             'employee_type',
             'guard',
-            'supervisor',
             'month',
             'year',
             'allowances',
@@ -665,12 +755,6 @@ class SalaryForm(forms.ModelForm):
 
         widgets = {
             'employee_type': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'supervisor': forms.Select(attrs={
                 'class': 'form-control'
             }),
             'month': forms.Select(attrs={
@@ -698,10 +782,6 @@ class SalaryForm(forms.ModelForm):
 
 
 class IncidentForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['reported_by'].required = True
-
     class Meta:
         model = Incident
         fields = [
@@ -718,7 +798,6 @@ class IncidentForm(forms.ModelForm):
             'involved_first_name',
             'involved_last_name',
             'further_comments',
-            'reported_by',
             'status',
         ]
 
@@ -736,14 +815,10 @@ class IncidentForm(forms.ModelForm):
             'involved_first_name': 'Full Name - First Name',
             'involved_last_name': 'Full Name - Last Name',
             'further_comments': 'Further Comments',
-            'reported_by': 'Supervisor',
             'status': 'Status',
         }
 
         widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'incident_date': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date',
@@ -793,193 +868,9 @@ class IncidentForm(forms.ModelForm):
                 'placeholder': 'Enter further comments',
                 'rows': 3
             }),
-            'reported_by': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'status': forms.Select(attrs={
                 'class': 'form-control'
             }),
         }
 
 
-class DisciplinaryActionForm(forms.ModelForm):
-    class Meta:
-        model = DisciplinaryAction
-        fields = '__all__'
-
-        widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'action_date': forms.DateInput(attrs={
-                'class': 'form-control',
-                'type': 'date'
-            }),
-            'action_type': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'description': forms.Textarea(attrs={
-                'class': 'form-control',
-                'placeholder': 'Describe disciplinary action',
-                'rows': 4
-            }),
-            'penalty': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter penalty if any'
-            }),
-            'issued_by': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-        }
-
-
-class AdvanceRequestForm(forms.ModelForm):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["installment_amount"].required = False
-        self.fields["recovery_period_months"].initial = 6
-
-    def clean_recovery_period_months(self):
-        return 6
-
-    class Meta:
-        model = AdvanceRequest
-        fields = [
-            'guard',
-            'review_supervisor',
-            'amount',
-            'installment_amount',
-            'recovery_period_months',
-            'reason',
-            'status',
-            'approved_by',
-            'approved_date',
-            'approval_reason',
-            'rejection_reason',
-        ]
-
-        widgets = {
-            'guard': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'review_supervisor': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'amount': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'step': '0.01',
-                'placeholder': 'Enter advance amount'
-            }),
-            'installment_amount': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'step': '0.01',
-                'readonly': 'readonly',
-                'placeholder': 'Auto calculated as 20% of gross pay'
-            }),
-            'recovery_period_months': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'min': '6',
-                'max': '6',
-                'readonly': 'readonly',
-            }),
-            'reason': forms.Textarea(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter reason for salary advance',
-                'rows': 3
-            }),
-            'status': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'approved_by': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'approved_date': forms.DateInput(attrs={
-                'class': 'form-control',
-                'type': 'date'
-            }),
-            'approval_reason': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 3,
-                'placeholder': 'Required when approving an advance request'
-            }),
-            'rejection_reason': forms.Textarea(attrs={
-                'class': 'form-control',
-                'rows': 3,
-                'placeholder': 'Required when rejecting an advance request'
-            }),
-        }
-
-
-class RemoteAdvanceRequestForm(forms.Form):
-    guard_number = forms.CharField(
-        max_length=20,
-        label="Guard Number",
-        widget=forms.TextInput(attrs={
-            "class": "form-control",
-            "placeholder": "Example: GUARD001"
-        })
-    )
-    phone = forms.CharField(
-        max_length=20,
-        label="Phone Number",
-        widget=forms.TextInput(attrs={
-            "class": "form-control",
-            "placeholder": "Enter the phone number on your guard profile"
-        })
-    )
-    amount = forms.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        widget=forms.NumberInput(attrs={
-            "class": "form-control",
-            "step": "0.01",
-            "placeholder": "Enter requested advance amount"
-        })
-    )
-    reason = forms.CharField(
-        widget=forms.Textarea(attrs={
-            "class": "form-control",
-            "rows": 4,
-            "placeholder": "Explain why you need this salary advance"
-        })
-    )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        guard_number = str(cleaned_data.get("guard_number") or "").strip()
-        phone = str(cleaned_data.get("phone") or "").strip()
-
-        guard = Guard.objects.filter(guard_number__iexact=guard_number, status="Active").first()
-        if not guard:
-            raise forms.ValidationError("No active guard was found with this guard number.")
-
-        if phone and str(guard.phone or "").strip() != phone:
-            raise forms.ValidationError("The phone number does not match this guard profile.")
-
-        if not guard.supervisor:
-            raise forms.ValidationError("This guard does not have an assigned supervisor for advance review.")
-
-        if not guard.supervisor.email:
-            raise forms.ValidationError("This guard's assigned supervisor does not have an email address for notifications.")
-
-        cleaned_data["guard"] = guard
-        return cleaned_data
-
-
-class GuardSelfAdvanceRequestForm(forms.Form):
-    amount = forms.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        widget=forms.NumberInput(attrs={
-            "class": "form-control",
-            "step": "0.01",
-            "placeholder": "Enter requested advance amount"
-        })
-    )
-    reason = forms.CharField(
-        widget=forms.Textarea(attrs={
-            "class": "form-control",
-            "rows": 4,
-            "placeholder": "Explain why you need this salary advance"
-        })
-    )

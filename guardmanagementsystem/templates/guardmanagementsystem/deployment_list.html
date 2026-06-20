@@ -24,10 +24,12 @@
             <thead>
                 <tr>
                     <th>Deployment ID</th>
-                    <th>Guard Number</th>
-                    <th>RFID Number</th>
                     <th>Client</th>
+                    <th>Contract</th>
                     <th>Location</th>
+                    <th>Required Guards</th>
+                    <th>Day Shift</th>
+                    <th>Night Shift</th>
                     <th>Start Date</th>
                     <th>End Date</th>
                     <th>Status</th>
@@ -39,21 +41,26 @@
                 {% for deployment in deployments %}
                     <tr>
                         <td>{{ deployment.deployment_id }}</td>
-                        <td>
-                            {{ deployment.guard.guard_number|default:"-" }}
-                            {% if deployment.guard.full_name %}
-                                - {{ deployment.guard.full_name }}
-                            {% endif %}
-                        </td>
-                        <td>{{ deployment.guard.rfid_card.card_number|default:deployment.guard.rfid_card_number|default:"-" }}</td>
                         <td>{{ deployment.client.client_name|default:"-" }}</td>
+                        <td>{{ deployment.contract.contract_number|default:"-" }}</td>
                         <td>{{ deployment.site_location }}</td>
+                        <td>{{ deployment.required_guard_count|default:"-" }}</td>
+                        <td>{{ deployment.day_shift_count|default:"-" }}</td>
+                        <td>{{ deployment.night_shift_count|default:"-" }}</td>
                         <td>{{ deployment.start_date|date:"M d, Y" }}</td>
                         <td>{{ deployment.end_date|date:"M d, Y"|default:"-" }}</td>
 
                         <td>
-                            {% if deployment.status == "Active" %}
+                            {% if deployment.status == "Running" %}
+                                <span class="badge bg-success">Running Deployment</span>
+                            {% elif deployment.status == "Closed" %}
+                                <span class="badge bg-secondary">Closed Deployment</span>
+                            {% elif deployment.status == "Active" %}
                                 <span class="badge bg-success">Active</span>
+                            {% elif deployment.status == "On Deployment" %}
+                                <span class="badge bg-warning text-dark">Guard is still on deployment</span>
+                            {% elif deployment.status == "Available" %}
+                                <span class="badge bg-primary">Available for deployment</span>
                             {% elif deployment.status == "Completed" %}
                                 <span class="badge bg-secondary">Completed</span>
                             {% elif deployment.status == "Cancelled" %}
@@ -77,7 +84,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">
+                        <td colspan="11" class="text-center text-muted py-4">
                             No deployments found.
                         </td>
                     </tr>

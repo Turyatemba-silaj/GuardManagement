@@ -49,6 +49,20 @@ def current_year():
     return date.today().year
 
 
+def next_contract_number():
+    year = date.today().year
+    prefix = f"CON-{year}-"
+    numbers = []
+
+    for value in Contract.objects.filter(contract_number__startswith=prefix).values_list("contract_number", flat=True):
+        match = re.match(rf"^{prefix}(\d+)$", value)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    next_number = max(numbers, default=0) + 1
+    return f"{prefix}{next_number:04d}"
+
+
 def next_guard_number():
     numbers = []
 
@@ -59,18 +73,6 @@ def next_guard_number():
 
     next_number = max(numbers, default=0) + 1
     return f"GUARD{next_number:03d}"
-
-
-def next_supervisor_number():
-    numbers = []
-
-    for value in Supervisor.objects.exclude(supervisor_number__isnull=True).exclude(supervisor_number="").values_list("supervisor_number", flat=True):
-        match = re.match(r"SUP(\d+)$", value)
-        if match:
-            numbers.append(int(match.group(1)))
-
-    next_number = max(numbers, default=0) + 1
-    return f"SUP{next_number:03d}"
 
 
 class RFIDCard(models.Model):
@@ -106,7 +108,6 @@ class Guard(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='guard_profile')
     guard_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
     rfid_card = models.OneToOneField(RFIDCard, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_guard')
-    supervisor = models.ForeignKey('Supervisor', on_delete=models.SET_NULL, null=True, blank=True, related_name='supervised_guards')
     rfid_card_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=100)
     date_of_birth = models.DateField()
@@ -177,6 +178,9 @@ class IoTDevice(models.Model):
 
         super().save(*args, **kwargs)
 
+        if self.status == 'Expired' and self.iot_device_id:
+            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
+
     def __str__(self):
         return f"{self.device_name} - {self.site_location}"
     
@@ -191,127 +195,213 @@ class Client(models.Model):
 
     def __str__(self):
         return self.client_name
+
+class Contract(models.Model):
+    CONTRACT_TYPE_CHOICES = [
+        ('Event Security', 'Event Security'),
+        ('Static Guarding', 'Static Guarding'),
+        ('Mobile Patrol', 'Mobile Patrol'),
+        ('Other', 'Other'),
+    ]
+
+    STATUS_CHOICES = [
+        ('Draft', 'Draft'),
+        ('Active', 'Active'),
+        ('Expired', 'Expired'),
+        ('Terminated', 'Terminated'),
+    ]
+
+    contract_id = models.AutoField(primary_key=True)
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='contracts')
+    contract_number = models.CharField(max_length=50, unique=True, blank=True)
+    number_of_guards = models.PositiveIntegerField()
+    day_shift_guards = models.PositiveIntegerField(default=0)
+    night_shift_guards = models.PositiveIntegerField(default=0)
+    charge_per_guard = models.DecimalField(max_digits=12, decimal_places=2)
+    contract_type = models.CharField(max_length=100, choices=CONTRACT_TYPE_CHOICES, default='Static Guarding')
+    location = models.CharField(max_length=200, blank=True)
+    iot_device = models.ForeignKey(IoTDevice, on_delete=models.SET_NULL, null=True, blank=True, related_name='contracts')
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Draft')
+    terms = models.TextField(blank=True)
+
+    @property
+    def monthly_value(self):
+        value = Decimal(self.number_of_guards or 0) * Decimal(self.charge_per_guard or 0)
+        return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @property
+    def shift_distribution_total(self):
+        return (self.day_shift_guards or 0) + (self.night_shift_guards or 0)
+
+    def clean(self):
+        if self.end_date and self.start_date and self.end_date < self.start_date:
+            raise ValidationError({'end_date': 'Contract end date cannot be before the start date.'})
+
+        if self.iot_device and self.client_id and self.iot_device.client_id and self.iot_device.client_id != self.client_id:
+            raise ValidationError({'iot_device': 'Selected IoT device belongs to another client.'})
+
+        if self.number_of_guards and self.shift_distribution_total != self.number_of_guards:
+            raise ValidationError({
+                'day_shift_guards': 'Day and night shift guards must add up to the total required guards.',
+                'night_shift_guards': 'Day and night shift guards must add up to the total required guards.',
+            })
+
+    def sync_expiry_status(self, today=None):
+        today = today or date.today()
+        if self.status == 'Terminated':
+            return
+        if self.end_date and self.end_date < today:
+            self.status = 'Expired'
+
+    def save(self, *args, **kwargs):
+        old_status = self.status
+        if self.iot_device:
+            if not self.location:
+                self.location = self.iot_device.site_location
+            if not self.client_id and self.iot_device.client_id:
+                self.client = self.iot_device.client
+
+        if not self.contract_number:
+            self.contract_number = next_contract_number()
+
+        self.sync_expiry_status()
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and self.status != old_status:
+            kwargs['update_fields'] = set(update_fields) | {'status'}
+
+        super().save(*args, **kwargs)
+
+        if self.status == 'Expired' and self.iot_device_id:
+            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
+
+    def __str__(self):
+        return f"{self.contract_number} - {self.client.client_name}"
     
 class Deployment(models.Model):
     STATUS_CHOICES = [
         ('Active', 'Active'),
+        ('On Deployment', 'On Deployment'),
+        ('Available', 'Available'),
+        ('Has No Deployment', 'Has No Deployment'),
         ('Completed', 'Completed'),
         ('Cancelled', 'Cancelled'),
+        ('Running', 'Running'),
+        ('Closed', 'Closed'),
     ]
 
     deployment_id = models.AutoField(primary_key=True)
-    guard = models.ForeignKey(Guard, on_delete=models.CASCADE,related_name='deployments')
     client = models.ForeignKey(Client,on_delete=models.CASCADE,related_name='deployments')
+    contract = models.ForeignKey(Contract, on_delete=models.SET_NULL, null=True, blank=True, related_name='deployments')
+    shift = models.ForeignKey('Shift', on_delete=models.SET_NULL, null=True, blank=True, related_name='deployments')
     site_location = models.CharField(max_length=200)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Active')
 
-    def __str__(self):
-        return f"{self.guard.full_name} deployed to {self.client.client_name}"
-
-class Supervisor(models.Model):
-    supervisor_id = models.AutoField(primary_key=True)
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='supervisor_profile')
-    full_name = models.CharField(max_length=100)
-    supervisor_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
-    guard_id = models.ForeignKey(Guard, on_delete=models.CASCADE, related_name='supervisor_profiles')
-    deployment_id = models.ForeignKey(Deployment,on_delete=models.CASCADE,null=True,blank=True)
-    daily_rate = models.DecimalField(max_digits=12, decimal_places=2, default=10000)
-    phone = models.CharField(max_length=20)
-    email = models.EmailField(max_length=100, blank=True, null=True)
-    designation = models.CharField(max_length=100, blank=True)
-    advance_notifications = models.PositiveIntegerField(default=0)
-    client_notifications = models.PositiveIntegerField(default=0)
-
-    def __str__(self):
-        return self.full_name
-
-    @property
-    def employee_number(self):
-        return self.supervisor_number
-
-
-class ClientCommunication(models.Model):
-    MESSAGE_TYPE_CHOICES = [
-        ('Service Request', 'Service Request'),
-        ('Complaint', 'Complaint'),
-        ('Feedback', 'Feedback'),
-        ('Incident Report', 'Incident Report'),
-        ('Communication', 'Communication'),
-    ]
-
-    STATUS_CHOICES = [
-        ('Pending', 'Pending'),
-        ('Under Review', 'Under Review'),
-        ('Resolved', 'Resolved'),
-        ('Closed', 'Closed'),
-    ]
-
-    communication_id = models.AutoField(primary_key=True)
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='communications')
-    review_supervisor = models.ForeignKey(
-        Supervisor,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='client_communications'
-    )
-    message_type = models.CharField(max_length=30, choices=MESSAGE_TYPE_CHOICES)
-    subject = models.CharField(max_length=200)
-    location = models.CharField(max_length=200, blank=True)
-    description = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    supervisor_response = models.TextField(blank=True)
-
     def clean(self):
-        super().clean()
-        if self.client_id and not self.review_supervisor:
-            self.review_supervisor = get_client_review_supervisor(self.client)
+        if self.end_date and self.start_date and self.end_date < self.start_date:
+            raise ValidationError({'end_date': 'Deployment end date cannot be before the start date.'})
 
-        if not self.review_supervisor:
-            raise ValidationError("This client has no deployed guard with an assigned supervisor for communication review.")
+        if self.contract and self.client_id and self.contract.client_id != self.client_id:
+            raise ValidationError({'contract': 'Selected contract belongs to another client.'})
+
+        if self.contract_id:
+            duplicate = self.__class__.objects.filter(contract_id=self.contract_id)
+            if self.pk:
+                duplicate = duplicate.exclude(pk=self.pk)
+            if duplicate.exists():
+                raise ValidationError({'contract': 'This contract is already linked to another deployment.'})
+
+
+    def sync_date_status(self, today=None):
+        today = today or date.today()
+        if self.status in ["Cancelled", "Completed"]:
+            return
+        if self.end_date and self.end_date < today:
+            self.status = "Closed"
+        else:
+            self.status = "Running"
 
     def save(self, *args, **kwargs):
-        previous_supervisor_id = None
-        if self.pk:
-            previous_supervisor_id = ClientCommunication.objects.filter(pk=self.pk).values_list("review_supervisor_id", flat=True).first()
+        if self.contract:
+            self.client = self.contract.client
+            if not self.site_location:
+                self.site_location = self.contract.location
+            if not self.start_date:
+                self.start_date = self.contract.start_date
+            if not self.end_date:
+                self.end_date = self.contract.end_date
 
-        if self.client_id:
-            self.review_supervisor = self.review_supervisor or get_client_review_supervisor(self.client)
-
+        self.sync_date_status()
         super().save(*args, **kwargs)
-        refresh_supervisor_client_notifications(self.review_supervisor_id)
-        if previous_supervisor_id and previous_supervisor_id != self.review_supervisor_id:
-            refresh_supervisor_client_notifications(previous_supervisor_id)
+
+        if self.status == 'Expired' and self.iot_device_id:
+            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
 
     def __str__(self):
-        return f"{self.client} - {self.message_type} - {self.subject}"
+        return f"{self.client.client_name} - {self.site_location}"
 
 
-def get_client_review_supervisor(client):
-    deployment = Deployment.objects.select_related("guard__supervisor").filter(
-        client=client,
-        status="Active",
-        guard__supervisor__isnull=False,
-    ).order_by("-start_date", "-deployment_id").first()
-    return deployment.guard.supervisor if deployment else None
+class DeploymentGuard(models.Model):
+    STATUS_CHOICES = [
+        ('Available for Deployment', 'Available for Deployment'),
+        ('On Site', 'On Site'),
+        ('Completed', 'Completed'),
+        ('Cancelled', 'Cancelled'),
+    ]
 
+    deployment_guard_id = models.AutoField(primary_key=True)
+    deployment = models.ForeignKey(Deployment, on_delete=models.CASCADE, related_name='deployment_guards')
+    guard = models.ForeignKey(Guard, on_delete=models.CASCADE, related_name='deployment_guard_assignments')
+    deployment_date = models.DateField(default=date.today)
+    check_in_time = models.TimeField(null=True, blank=True)
+    check_out_time = models.TimeField(null=True, blank=True)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Available for Deployment')
 
-def refresh_supervisor_client_notifications(supervisor_id):
-    if not supervisor_id:
-        return
+    class Meta:
+        unique_together = ('deployment', 'guard', 'deployment_date')
 
-    pending_count = ClientCommunication.objects.filter(
-        review_supervisor_id=supervisor_id,
-        status="Pending",
-    ).count()
-    Supervisor.objects.filter(supervisor_id=supervisor_id).update(client_notifications=pending_count)
-   
+    def clean(self):
+        if self.check_in_time and self.check_out_time and self.check_out_time < self.check_in_time:
+            raise ValidationError("Guard deployment check out cannot be before check in.")
 
-    
+        if self.deployment_id and self.deployment_date:
+            if self.deployment_date < self.deployment.start_date:
+                raise ValidationError("Guard deployment date cannot be before the deployment start date.")
+
+            if self.deployment.end_date and self.deployment_date > self.deployment.end_date:
+                raise ValidationError("Guard deployment date cannot be after the deployment end date.")
+
+        if self.deployment_id and self.deployment.contract_id and self.deployment_date:
+            active_statuses = ["Active", "Running", "On Deployment", "Available", "Has No Deployment"]
+            existing_assignments = DeploymentGuard.objects.filter(
+                deployment__contract=self.deployment.contract,
+                deployment__status__in=active_statuses,
+                deployment_date=self.deployment_date,
+            )
+
+            if self.pk:
+                existing_assignments = existing_assignments.exclude(pk=self.pk)
+
+            assigned_guard_count = existing_assignments.values("guard_id").distinct().count()
+            if self.guard_id and not existing_assignments.filter(guard_id=self.guard_id).exists():
+                assigned_guard_count += 1
+
+            if assigned_guard_count > self.deployment.contract.number_of_guards:
+                raise ValidationError("you have excedd contacted number of guards")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+        if self.status == 'Expired' and self.iot_device_id:
+            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
+
+    def __str__(self):
+        return f"{self.guard.full_name} assigned to {self.deployment}"
+
 class Asset(models.Model):
     STATUS_CHOICES = [
         ('Assigned', 'Assigned'),
@@ -333,8 +423,37 @@ class Asset(models.Model):
     purchase_date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available')
 
+    def save(self, *args, **kwargs):
+        if self.guard_id and self.status in ["Available", "Returned"]:
+            self.status = "Assigned"
+
+        if not self.guard_id and self.status == "Assigned":
+            self.status = "Available"
+
+        super().save(*args, **kwargs)
+
+        if self.status == 'Expired' and self.iot_device_id:
+            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
+
     def __str__(self):
         return f"{self.asset_name} - {self.serial_number}"
+
+
+class AssetAssignmentHistory(models.Model):
+    history_id = models.AutoField(primary_key=True)
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="assignment_history")
+    guard = models.ForeignKey(Guard, on_delete=models.SET_NULL, null=True, blank=True, related_name="asset_assignment_history")
+    assigned_date = models.DateField(default=date.today)
+    returned_date = models.DateField(null=True, blank=True)
+    condition_on_return = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-assigned_date", "-history_id"]
+
+    def __str__(self):
+        guard_name = self.guard.full_name if self.guard else "Unassigned guard"
+        return f"{self.asset} - {guard_name}"
     
 class Attendance(models.Model):
     STATUS_CHOICES = [
@@ -351,7 +470,6 @@ class Attendance(models.Model):
     check_out_time = models.TimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Present')
     replacement_guard = models.ForeignKey( Guard,on_delete=models.SET_NULL, null=True,blank=True, related_name='replacement_attendances' )
-    swiped_by_supervisor = models.ForeignKey(Supervisor, on_delete=models.SET_NULL, null=True, blank=True, related_name='swiped_attendances')
     absence_reason = models.TextField(blank=True)
 
     def __str__(self):
@@ -364,6 +482,27 @@ class Attendance(models.Model):
                 name='unique_guard_attendance_date'
             )
         ]
+
+
+class AttendanceSwipe(models.Model):
+    SWIPE_TYPE_CHOICES = [
+        ('check_in', 'Check In'),
+        ('hourly', 'Hourly Swipe'),
+        ('check_out', 'Check Out'),
+        ('replacement', 'Replacement'),
+    ]
+
+    swipe_id = models.AutoField(primary_key=True)
+    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name='swipes')
+    iot_device = models.ForeignKey(IoTDevice, on_delete=models.SET_NULL, null=True, blank=True, related_name='attendance_swipes')
+    swipe_time = models.DateTimeField()
+    swipe_type = models.CharField(max_length=20, choices=SWIPE_TYPE_CHOICES, default='hourly')
+
+    class Meta:
+        ordering = ['swipe_time', 'swipe_id']
+
+    def __str__(self):
+        return f"{self.attendance.guard.full_name} - {self.swipe_type} - {self.swipe_time:%Y-%m-%d %H:%M}"
 
 class Shift(models.Model):
     SHIFT_TYPE_CHOICES = [
@@ -394,7 +533,6 @@ class Shift(models.Model):
 class Salary(models.Model):
     EMPLOYEE_TYPE_CHOICES = [
         ('Guard', 'Guard'),
-        ('Supervisor', 'Supervisor'),
     ]
 
     MONTH_CHOICES = [
@@ -415,7 +553,6 @@ class Salary(models.Model):
     salary_id = models.AutoField(primary_key=True)
     employee_type = models.CharField(max_length=20, choices=EMPLOYEE_TYPE_CHOICES, default='Guard')
     guard = models.ForeignKey( Guard, on_delete=models.CASCADE,related_name='salaries', null=True, blank=True)
-    supervisor = models.ForeignKey( Supervisor, on_delete=models.CASCADE,related_name='salaries', null=True, blank=True)
     month = models.CharField(max_length=20, choices=MONTH_CHOICES)
     year = models.PositiveIntegerField(default=current_year)
     basic_pay = models.DecimalField(max_digits=12, decimal_places=2)
@@ -431,12 +568,6 @@ class Salary(models.Model):
         if self.employee_type == 'Guard' and not self.guard:
             raise ValidationError({'guard': 'Select the guard receiving this salary.'})
 
-        if self.employee_type == 'Supervisor' and not self.supervisor:
-            raise ValidationError({'supervisor': 'Select the supervisor receiving this salary.'})
-
-        if self.guard and self.supervisor:
-            raise ValidationError('Select either a guard or a supervisor, not both.')
-
     def save(self, *args, **kwargs):
         if self.employee_type == 'Guard' and self.guard:
             month_number = datetime.strptime(self.month, "%B").month
@@ -447,18 +578,7 @@ class Salary(models.Model):
                 models.Q(replacement_guard=self.guard, status="Absent"),
                 attendance_date__year=self.year,
                 attendance_date__month=month_number,
-            ).count()
-            self.basic_pay = self.attendance_days * self.daily_rate
-
-        if self.employee_type == 'Supervisor' and self.supervisor:
-            month_number = datetime.strptime(self.month, "%B").month
-            self.computed_from_attendance = True
-            self.daily_rate = self.supervisor.daily_rate
-            self.attendance_days = Attendance.objects.filter(
-                models.Q(guard=self.supervisor.guard_id, status__in=["Present", "Late"]) |
-                models.Q(replacement_guard=self.supervisor.guard_id, status="Absent"),
-                attendance_date__year=self.year,
-                attendance_date__month=month_number,
+                check_out_time__isnull=False,
             ).count()
             self.basic_pay = self.attendance_days * self.daily_rate
 
@@ -467,13 +587,10 @@ class Salary(models.Model):
 
     @property
     def employee(self):
-        return self.supervisor if self.employee_type == 'Supervisor' else self.guard
+        return self.guard
 
     @property
     def employee_number(self):
-        if self.employee_type == 'Supervisor' and self.supervisor:
-            return self.supervisor.supervisor_number
-
         if self.guard:
             return self.guard.guard_number
 
@@ -518,7 +635,6 @@ class Incident(models.Model):
     involved_first_name = models.CharField(max_length=100, blank=True)
     involved_last_name = models.CharField(max_length=100, blank=True)
     further_comments = models.TextField(blank=True)
-    reported_by = models.ForeignKey(Supervisor,on_delete=models.SET_NULL, null=True,blank=True, related_name='reported_incidents')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
 
     @property
@@ -530,7 +646,7 @@ class Incident(models.Model):
             self.reporter_last_name,
         ] if part)
 
-        return name or self.reported_by or "-"
+        return name or "-"
 
     @property
     def involved_full_name(self):
@@ -539,132 +655,6 @@ class Incident(models.Model):
     def __str__(self):
         return f"{self.incident_type} - {self.guard.full_name}"
     
-class DisciplinaryAction(models.Model):
-    ACTION_TYPE_CHOICES = [
-        ('Warning', 'Warning'),
-        ('Suspension', 'Suspension'),
-        ('Fine', 'Fine'),
-        ('Dismissal', 'Dismissal'),
-        ('Other', 'Other'),
-    ]
-
-    disciplinary_id = models.AutoField(primary_key=True)
-    guard = models.ForeignKey(Guard, on_delete=models.CASCADE, related_name='disciplinary_actions')
-    action_date = models.DateField()
-    action_type = models.CharField(max_length=50, choices=ACTION_TYPE_CHOICES)
-    description = models.TextField()
-    penalty = models.CharField(max_length=200, null=True, blank=True)
-    issued_by = models.ForeignKey(Supervisor,on_delete=models.SET_NULL,null=True,blank=True, related_name='issued_disciplinary_actions')
-
-    def __str__(self):
-        return f"{self.guard.full_name} - {self.action_type}"
-    
-class AdvanceRequest(models.Model):
-    STATUS_CHOICES = [
-        ('Pending', 'Pending'),
-        ('Approved', 'Approved'),
-        ('Rejected', 'Rejected'),
-        ('Paid', 'Paid'),
-    ]
-
-    advance_id = models.AutoField(primary_key=True)
-    guard = models.ForeignKey(
-        Guard,
-        on_delete=models.CASCADE,
-        related_name='advance_requests'
-    )
-    review_supervisor = models.ForeignKey(
-        Supervisor,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='advance_notifications_requests'
-    )
-    request_date = models.DateField(auto_now=True)
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
-    installment_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    recovery_period_months = models.PositiveIntegerField(default=6)
-    reason = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
-    approved_by = models.ForeignKey(
-        Supervisor,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='approved_advance_requests'
-    )
-    approved_date = models.DateField(null=True, blank=True)
-    approval_reason = models.TextField(blank=True)
-    rejection_reason = models.TextField(blank=True)
-
-    def calculate_gross_pay(self):
-        if not self.guard:
-            return Decimal("0.00")
-
-        pay_date = self.request_date or date.today()
-        attendance_days = Attendance.objects.filter(
-            models.Q(guard=self.guard, status__in=["Present", "Late"]) |
-            models.Q(replacement_guard=self.guard, status="Absent"),
-            models.Q(check_in_time__isnull=False) | models.Q(check_out_time__isnull=False),
-            attendance_date__year=pay_date.year,
-            attendance_date__month=pay_date.month,
-        ).values("attendance_date").distinct().count()
-
-        gross_pay = Decimal(attendance_days) * Decimal(self.guard.daily_rate or 0)
-        return gross_pay.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    def calculate_installment_amount(self):
-        return (self.calculate_gross_pay() * Decimal("0.20")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    def clean(self):
-        super().clean()
-        if self.guard and not self.review_supervisor:
-            self.review_supervisor = self.guard.supervisor
-
-        if not self.recovery_period_months:
-            self.recovery_period_months = 6
-
-        self.installment_amount = self.calculate_installment_amount()
-        recoverable_amount = self.installment_amount * Decimal(self.recovery_period_months)
-
-        if self.amount and self.installment_amount <= 0:
-            raise ValidationError("This guard has no swipe-attendance gross pay for the current payroll month, so an advance installment cannot be calculated.")
-
-        if self.amount and self.amount > recoverable_amount:
-            raise ValidationError({
-                "amount": f"Advance amount must not exceed {recoverable_amount} so it can be recovered within {self.recovery_period_months} month(s)."
-            })
-
-    def save(self, *args, **kwargs):
-        previous_supervisor_id = None
-        if self.pk:
-            previous_supervisor_id = AdvanceRequest.objects.filter(pk=self.pk).values_list("review_supervisor_id", flat=True).first()
-
-        if self.guard:
-            self.review_supervisor = self.guard.supervisor
-
-        self.recovery_period_months = self.recovery_period_months or 6
-        self.installment_amount = self.calculate_installment_amount()
-        super().save(*args, **kwargs)
-        refresh_supervisor_advance_notifications(self.review_supervisor_id)
-        if previous_supervisor_id and previous_supervisor_id != self.review_supervisor_id:
-            refresh_supervisor_advance_notifications(previous_supervisor_id)
-
-    def __str__(self):
-        return f"{self.guard.full_name} - Advance {self.amount}"
-
-
-def refresh_supervisor_advance_notifications(supervisor_id):
-    if not supervisor_id:
-        return
-
-    pending_count = AdvanceRequest.objects.filter(
-        review_supervisor_id=supervisor_id,
-        status="Pending",
-    ).count()
-    Supervisor.objects.filter(supervisor_id=supervisor_id).update(advance_notifications=pending_count)
-
-
 def recompute_guard_salary_for_month(guard, year, month):
     month_name = date(year, month, 1).strftime("%B")
     attendance_days = Attendance.objects.filter(
@@ -672,13 +662,13 @@ def recompute_guard_salary_for_month(guard, year, month):
         models.Q(replacement_guard=guard, status="Absent"),
         attendance_date__year=year,
         attendance_date__month=month,
+        check_out_time__isnull=False,
     ).count()
 
     payment_date = date(year, month, monthrange(year, month)[1])
     salary, _ = Salary.objects.get_or_create(
         employee_type="Guard",
         guard=guard,
-        supervisor=None,
         month=month_name,
         year=year,
         defaults={
@@ -697,28 +687,6 @@ def recompute_guard_salary_for_month(guard, year, month):
     return salary
 
 
-def recompute_supervisor_salary_for_month(supervisor, year, month):
-    month_name = date(year, month, 1).strftime("%B")
-    payment_date = date(year, month, monthrange(year, month)[1])
-    salary, _ = Salary.objects.get_or_create(
-        employee_type="Supervisor",
-        supervisor=supervisor,
-        guard=None,
-        month=month_name,
-        year=year,
-        defaults={
-            "basic_pay": 0,
-            "allowances": 0,
-            "deductions": 0,
-            "payment_date": payment_date,
-        },
-    )
-
-    salary.payment_date = payment_date
-    salary.save()
-    return salary
-
-
 def recompute_guard_salaries(guard):
     attendance_months = Attendance.objects.filter(
         models.Q(guard=guard) | models.Q(replacement_guard=guard)
@@ -731,14 +699,6 @@ def recompute_guard_salaries(guard):
             attendance_month.month
         )
 
-        for supervisor in Supervisor.objects.filter(guard_id=guard):
-            recompute_supervisor_salary_for_month(
-                supervisor,
-                attendance_month.year,
-                attendance_month.month
-            )
-
-
 def recompute_payroll_for_guard_month(guard, attendance_date):
     if not guard or not attendance_date:
         return
@@ -748,14 +708,6 @@ def recompute_payroll_for_guard_month(guard, attendance_date):
         attendance_date.year,
         attendance_date.month
     )
-
-    for supervisor in Supervisor.objects.filter(guard_id=guard):
-        recompute_supervisor_salary_for_month(
-            supervisor,
-            attendance_date.year,
-            attendance_date.month
-        )
-
 
 @receiver(pre_save, sender=Attendance)
 def remember_old_attendance_payroll_refs(sender, instance, **kwargs):
@@ -805,16 +757,6 @@ def update_salary_after_attendance_delete(sender, instance, **kwargs):
     recompute_payroll_for_guard_month(instance.replacement_guard, instance.attendance_date)
 
 
-@receiver(post_delete, sender=AdvanceRequest)
-def update_supervisor_advance_notifications_after_delete(sender, instance, **kwargs):
-    refresh_supervisor_advance_notifications(instance.review_supervisor_id)
-
-
-@receiver(post_delete, sender=ClientCommunication)
-def update_supervisor_client_notifications_after_delete(sender, instance, **kwargs):
-    refresh_supervisor_client_notifications(instance.review_supervisor_id)
-
-
 @receiver(post_save, sender=Guard)
 def update_salary_after_guard_rate_change(sender, instance, **kwargs):
     if not instance.guard_number:
@@ -827,17 +769,60 @@ def update_salary_after_guard_rate_change(sender, instance, **kwargs):
     recompute_guard_salaries(instance)
 
 
-@receiver(post_save, sender=Supervisor)
-def update_salary_after_supervisor_rate_change(sender, instance, **kwargs):
-    if not instance.supervisor_number:
-        instance.supervisor_number = next_supervisor_number()
-        Supervisor.objects.filter(pk=instance.pk).update(supervisor_number=instance.supervisor_number)
+@receiver(pre_save, sender=Asset)
+def remember_old_asset_assignment(sender, instance, **kwargs):
+    if not instance.pk:
+        instance._old_guard_id = None
+        instance._old_status = None
+        return
 
-    attendance_months = Attendance.objects.filter(guard=instance.guard_id).dates("attendance_date", "month")
+    old_asset = Asset.objects.filter(pk=instance.pk).only("guard_id", "status").first()
+    instance._old_guard_id = old_asset.guard_id if old_asset else None
+    instance._old_status = old_asset.status if old_asset else None
 
-    for attendance_month in attendance_months:
-        recompute_supervisor_salary_for_month(
-            instance,
-            attendance_month.year,
-            attendance_month.month
+
+@receiver(post_save, sender=Asset)
+def record_asset_assignment_history(sender, instance, created, **kwargs):
+    old_guard_id = getattr(instance, "_old_guard_id", None)
+    old_status = getattr(instance, "_old_status", None)
+
+    if created:
+        if instance.guard_id:
+            AssetAssignmentHistory.objects.create(
+                asset=instance,
+                guard=instance.guard,
+                notes="Asset assigned on creation.",
+            )
+        return
+
+    guard_changed = old_guard_id != instance.guard_id
+    status_changed = old_status != instance.status
+
+    if guard_changed and old_guard_id:
+        AssetAssignmentHistory.objects.filter(
+            asset=instance,
+            guard_id=old_guard_id,
+            returned_date__isnull=True,
+        ).update(
+            returned_date=date.today(),
+            condition_on_return=instance.status,
         )
+
+    if guard_changed and instance.guard_id:
+        AssetAssignmentHistory.objects.create(
+            asset=instance,
+            guard=instance.guard,
+            notes="Asset reassigned.",
+        )
+
+    if not guard_changed and status_changed and instance.status in ["Returned", "Damaged", "Lost"]:
+        AssetAssignmentHistory.objects.filter(
+            asset=instance,
+            guard_id=instance.guard_id,
+            returned_date__isnull=True,
+        ).update(
+            returned_date=date.today(),
+            condition_on_return=instance.status,
+        )
+
+
