@@ -17,6 +17,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+IS_VERCEL = bool(os.environ.get("VERCEL"))
 
 
 # Quick-start development settings - unsuitable for production
@@ -29,7 +30,7 @@ SECRET_KEY = os.environ.get(
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DEBUG", "false" if os.environ.get("VERCEL") else "true").lower() in ["1", "true", "yes"]
+DEBUG = os.environ.get("DEBUG", "false" if IS_VERCEL else "true").lower() in ["1", "true", "yes"]
 
 ALLOWED_HOSTS = [
     "localhost",
@@ -54,6 +55,20 @@ if os.environ.get("CSRF_TRUSTED_ORIGINS"):
         if origin.strip()
     )
 
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = IS_VERCEL
+SESSION_COOKIE_SECURE = IS_VERCEL
+CSRF_COOKIE_SECURE = IS_VERCEL
+SECURE_HSTS_SECONDS = 31536000 if IS_VERCEL else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
+PUBLIC_SIGNUP_ENABLED = os.environ.get("PUBLIC_SIGNUP_ENABLED", "false" if IS_VERCEL else "true").lower() in ["1", "true", "yes"]
+PUBLIC_PASSWORD_RESET_ENABLED = os.environ.get("PUBLIC_PASSWORD_RESET_ENABLED", "false" if IS_VERCEL else "true").lower() in ["1", "true", "yes"]
 
 # Application definition
 INSTALLED_APPS = [
@@ -106,7 +121,7 @@ WSGI_APPLICATION = 'GuardSystem.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DB_NAME = BASE_DIR / 'db.sqlite3'
-if os.environ.get("VERCEL"):
+if IS_VERCEL:
     bundled_db = DB_NAME
     runtime_db = Path(tempfile.gettempdir()) / "db.sqlite3"
     if runtime_db.exists():

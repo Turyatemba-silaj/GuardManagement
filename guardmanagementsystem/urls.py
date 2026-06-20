@@ -6,6 +6,7 @@ from . import views
 urlpatterns = [
     re_path(r"^http:/*$", RedirectView.as_view(url="/dashboard/", permanent=False)),
     path("", views.welcome, name="welcome"),
+    path("robots.txt", views.robots_txt, name="robots_txt"),
     path("signup/", views.signup, name="signup"),
     path("signin/", views.signin, name="signin"),
     path("logout/", views.signout, name="signout"),

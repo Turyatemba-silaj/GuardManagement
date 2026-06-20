@@ -217,6 +217,19 @@ def build_simple_pdf(title, sections):
 def welcome(request):
     return render(request, "guardmanagementsystem/welcome.html")
 
+def robots_txt(request):
+    lines = [
+        "User-agent: *",
+        "Disallow: /signin/",
+        "Disallow: /signup/",
+        "Disallow: /forgot-password/",
+        "Disallow: /reset-password/",
+        "Disallow: /dashboard/",
+        "Allow: /$",
+    ]
+    return HttpResponse("\n".join(lines), content_type="text/plain")
+
+
 
 def get_client_ip(request):
     forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
@@ -236,6 +249,9 @@ def log_action(request, action, description):
 
 
 def signup(request):
+    if not settings.PUBLIC_SIGNUP_ENABLED:
+        raise Http404("Public account registration is not available.")
+
     if request.method == "POST":
         form = SignupForm(request.POST)
         if form.is_valid():
@@ -290,8 +306,8 @@ def signin(request):
         "form": form,
         "title": "Sign In",
         "button_text": "Sign In",
-        "helper_link": "forgot_password",
-        "helper_text": "Forgot password?"
+        "helper_link": "forgot_password" if settings.PUBLIC_PASSWORD_RESET_ENABLED else None,
+        "helper_text": "Forgot password?" if settings.PUBLIC_PASSWORD_RESET_ENABLED else ""
     })
 
 
@@ -304,6 +320,9 @@ def signout(request):
 
 
 def forgot_password(request):
+    if not settings.PUBLIC_PASSWORD_RESET_ENABLED:
+        raise Http404("Public password reset is not available.")
+
     if request.method == "POST":
         form = PasswordResetForm(request.POST)
         if form.is_valid():
@@ -346,6 +365,9 @@ def forgot_password(request):
 
 
 def reset_password(request, uidb64, token):
+    if not settings.PUBLIC_PASSWORD_RESET_ENABLED:
+        raise Http404("Public password reset is not available.")
+
     try:
         user_id = force_str(urlsafe_base64_decode(uidb64))
         user = User.objects.get(pk=user_id)

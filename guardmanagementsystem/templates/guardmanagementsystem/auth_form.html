@@ -168,7 +168,9 @@
 
             <div class="auth-links mt-3 d-flex justify-content-between">
                 <a href="{% url 'welcome' %}" class="text-decoration-none">Public page</a>
-                <a href="{% url helper_link %}" class="text-decoration-none">{{ helper_text }}</a>
+                {% if helper_link %}
+                    <a href="{% url helper_link %}" class="text-decoration-none">{{ helper_text }}</a>
+                {% endif %}
             </div>
         </div>
     </div>
