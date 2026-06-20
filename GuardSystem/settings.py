@@ -33,6 +33,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "192.168.43.100",
+    "guard-management-f9ug.vercel.app",
     ".vercel.app",
 ]
 
