@@ -21,16 +21,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-hgh=v%(i0781o%@v6h&c#wpea01b#m*h$(+700@)j4&4u^oxs%'
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-hgh=v%(i0781o%@v6h&c#wpea01b#m*h$(+700@)j4&4u^oxs%"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "false" if os.environ.get("VERCEL") else "true").lower() in ["1", "true", "yes"]
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "192.168.43.100"]
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "192.168.43.100",
+    ".vercel.app",
+]
+
+if os.environ.get("ALLOWED_HOSTS"):
+    ALLOWED_HOSTS.extend(
+        host.strip()
+        for host in os.environ["ALLOWED_HOSTS"].split(",")
+        if host.strip()
+    )
+
+CSRF_TRUSTED_ORIGINS = ["https://*.vercel.app"]
+if os.environ.get("CSRF_TRUSTED_ORIGINS"):
+    CSRF_TRUSTED_ORIGINS.extend(
+        origin.strip()
+        for origin in os.environ["CSRF_TRUSTED_ORIGINS"].split(",")
+        if origin.strip()
+    )
 
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -122,7 +144,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 LOGIN_URL = "signin"
 LOGIN_REDIRECT_URL = "dashboard"
