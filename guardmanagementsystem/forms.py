@@ -129,12 +129,9 @@ class EmailOrUsernameAuthenticationForm(AuthenticationForm):
 class GuardForm(forms.ModelForm):
     class Meta:
         model = Guard
-        exclude = ['user', 'rfid_card_number']
+        exclude = ['user']
 
         widgets = {
-            'rfid_card': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'full_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter guard full name'
@@ -301,6 +298,8 @@ class ContractForm(forms.ModelForm):
             lambda device: f"{device.client.client_name if device.client else 'Unassigned'} - {device.site_location}"
         )
         self.fields['iot_device'].help_text = "Pick an active IoT device from the IoT Device table."
+        self.fields['rfid_cards'].queryset = RFIDCard.objects.filter(status="Active").order_by('card_number', 'card_uid')
+        self.fields['rfid_cards'].help_text = "Select the RFID card(s) authorized for this client contract."
         self.fields['contract_number'].required = False
         self.fields['contract_number'].help_text = "Leave blank to generate the next contract number."
 
@@ -316,6 +315,7 @@ class ContractForm(forms.ModelForm):
             'contract_type',
             'location',
             'iot_device',
+            'rfid_cards',
             'start_date',
             'end_date',
             'status',
@@ -356,6 +356,10 @@ class ContractForm(forms.ModelForm):
             }),
             'iot_device': forms.Select(attrs={
                 'class': 'form-control'
+            }),
+            'rfid_cards': forms.SelectMultiple(attrs={
+                'class': 'form-control',
+                'size': '5'
             }),
             'start_date': forms.DateInput(attrs={
                 'class': 'form-control',
@@ -872,5 +876,3 @@ class IncidentForm(forms.ModelForm):
                 'class': 'form-control'
             }),
         }
-
-

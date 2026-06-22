@@ -31,7 +31,6 @@ class GuardAdmin(admin.ModelAdmin):
     list_display = (
         "guard_id",
         "user",
-        "rfid_card",
         "full_name",
         "phone",
         "email",
@@ -42,9 +41,6 @@ class GuardAdmin(admin.ModelAdmin):
 
     search_fields = (
         "user__username",
-        "rfid_card__card_uid",
-        "rfid_card__card_number",
-        "rfid_card_number",
         "full_name",
         "phone",
         "email",
@@ -120,10 +116,10 @@ class ContractAdmin(admin.ModelAdmin):
         "charge_per_guard",
         "monthly_value",
         "contract_type",
+        "assigned_rfid_cards",
         "status",
         "start_date",
         "end_date",
-        "status",
     )
 
     search_fields = (
@@ -131,6 +127,8 @@ class ContractAdmin(admin.ModelAdmin):
         "client__client_name",
         "location",
         "contract_type",
+        "rfid_cards__card_uid",
+        "rfid_cards__card_number",
     )
 
     list_filter = (
@@ -144,6 +142,10 @@ class ContractAdmin(admin.ModelAdmin):
     readonly_fields = (
         "monthly_value",
     )
+
+    def assigned_rfid_cards(self, obj):
+        cards = obj.rfid_cards.values_list("card_number", flat=True).distinct()
+        return ", ".join(cards) or "-"
 
 @admin.register(Deployment)
 class DeploymentAdmin(admin.ModelAdmin):

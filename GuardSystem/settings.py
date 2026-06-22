@@ -35,6 +35,7 @@ DEBUG = os.environ.get("DEBUG", "false" if IS_VERCEL else "true").lower() in ["1
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
+    "10.10.6.253",
     "192.168.43.100",
     "guard-management-f9ug.vercel.app",
     ".vercel.app",
@@ -195,3 +196,4 @@ EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() in ["1", "true", "yes"]
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@guardmanagement.local")
+

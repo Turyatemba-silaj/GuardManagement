@@ -28,6 +28,7 @@
                     <th>Type</th>
                     <th>Period</th>
                     <th>IoT Device</th>
+                    <th>RFID Cards</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -58,6 +59,7 @@
                                 -
                             {% endif %}
                         </td>
+                        <td>{{ contract.assigned_rfid_cards|default:"-" }}</td>
                         <td>
                             {% if contract.status == "Active" %}
                                 <span class="badge bg-success">Active</span>
@@ -83,7 +85,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="13" class="text-center text-muted py-4">
+                        <td colspan="14" class="text-center text-muted py-4">
                             No contracts found.
                         </td>
                     </tr>
@@ -93,6 +95,3 @@
     </div>
 </div>
 {% endblock %}
-
-
-

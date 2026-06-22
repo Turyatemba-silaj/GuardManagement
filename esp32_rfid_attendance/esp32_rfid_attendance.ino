@@ -5,13 +5,13 @@
 #include <SPI.h>
 #include <MFRC522.h>
 
-const char* WIFI_SSID = "siraj";
-const char* WIFI_PASSWORD = "123456789";
+const char* WIFI_SSID = "Silaj";
+const char* WIFI_PASSWORD = "turyatemba";
 
-const char* ATTENDANCE_API_URL = "http://192.168.43.100:8000/api/iot/attendance/";
+const char* ATTENDANCE_API_URL = "http://10.10.6.253:8000/api/iot/attendance/";
 
-const char* DEVICE_CODE = "GATE-001-KAMPALA-ROAD-001";
-const char* API_KEY = "FXvvGf7nekvgny3dQwgVdTsQSA5ztmWZ";
+const char* DEVICE_CODE = "GATE-005-KAMPALA-ROAD-001";
+const char* API_KEY = "baEQJpikiu2v6mGjam7_0wIu2vcuQfEl";
 
 // ESP8266 GPIO NUMBERS
 #define SS_PIN 2       // D4
@@ -114,6 +114,12 @@ bool sendAttendanceSwipe(String uid) {
 
   Serial.print("HTTP Status: ");
   Serial.println(statusCode);
+  if (statusCode <= 0) {
+    Serial.print("HTTP Error: ");
+    Serial.println(http.errorToString(statusCode));
+  }
+  Serial.print("Payload: ");
+  Serial.println(payload);
   Serial.println(response);
 
   lcd.clear();
@@ -203,3 +209,5 @@ void loop() {
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
 }
+
+

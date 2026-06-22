@@ -107,8 +107,6 @@ class Guard(models.Model):
     guard_id = models.AutoField(primary_key=True)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='guard_profile')
     guard_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
-    rfid_card = models.OneToOneField(RFIDCard, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_guard')
-    rfid_card_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=100)
     date_of_birth = models.DateField()
     phone = models.CharField(max_length=20)
@@ -221,6 +219,7 @@ class Contract(models.Model):
     contract_type = models.CharField(max_length=100, choices=CONTRACT_TYPE_CHOICES, default='Static Guarding')
     location = models.CharField(max_length=200, blank=True)
     iot_device = models.ForeignKey(IoTDevice, on_delete=models.SET_NULL, null=True, blank=True, related_name='contracts')
+    rfid_cards = models.ManyToManyField(RFIDCard, blank=True, related_name='contracts')
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Draft')
@@ -763,8 +762,6 @@ def update_salary_after_guard_rate_change(sender, instance, **kwargs):
         instance.guard_number = next_guard_number()
         Guard.objects.filter(pk=instance.pk).update(guard_number=instance.guard_number)
 
-    if instance.status in ["Inactive", "Suspended", "Terminated", "Dismissed", "Resigned"] and instance.rfid_card:
-        RFIDCard.objects.filter(pk=instance.rfid_card_id, status="Active").update(status="Inactive")
 
     recompute_guard_salaries(instance)
 
@@ -824,5 +821,3 @@ def record_asset_assignment_history(sender, instance, created, **kwargs):
             returned_date=date.today(),
             condition_on_return=instance.status,
         )
-
-
