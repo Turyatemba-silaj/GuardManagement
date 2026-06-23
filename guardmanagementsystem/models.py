@@ -106,6 +106,7 @@ class Guard(models.Model):
 
     guard_id = models.AutoField(primary_key=True)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='guard_profile')
+    rfid_card = models.OneToOneField(RFIDCard, on_delete=models.SET_NULL, null=True, blank=True, related_name='guard')
     guard_number = models.CharField(max_length=20, unique=True, null=True, blank=True, editable=False)
     full_name = models.CharField(max_length=100)
     date_of_birth = models.DateField()
@@ -175,9 +176,6 @@ class IoTDevice(models.Model):
             self.api_key = secrets.token_urlsafe(24)
 
         super().save(*args, **kwargs)
-
-        if self.status == 'Expired' and self.iot_device_id:
-            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
 
     def __str__(self):
         return f"{self.device_name} - {self.site_location}"
@@ -272,9 +270,6 @@ class Contract(models.Model):
 
         super().save(*args, **kwargs)
 
-        if self.status == 'Expired' and self.iot_device_id:
-            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
-
     def __str__(self):
         return f"{self.contract_number} - {self.client.client_name}"
     
@@ -336,9 +331,6 @@ class Deployment(models.Model):
         self.sync_date_status()
         super().save(*args, **kwargs)
 
-        if self.status == 'Expired' and self.iot_device_id:
-            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
-
     def __str__(self):
         return f"{self.client.client_name} - {self.site_location}"
 
@@ -395,9 +387,6 @@ class DeploymentGuard(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
-        if self.status == 'Expired' and self.iot_device_id:
-            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
-
     def __str__(self):
         return f"{self.guard.full_name} assigned to {self.deployment}"
 
@@ -430,9 +419,6 @@ class Asset(models.Model):
             self.status = "Available"
 
         super().save(*args, **kwargs)
-
-        if self.status == 'Expired' and self.iot_device_id:
-            IoTDevice.objects.filter(pk=self.iot_device_id, is_active=True).update(is_active=False)
 
     def __str__(self):
         return f"{self.asset_name} - {self.serial_number}"
@@ -821,3 +807,5 @@ def record_asset_assignment_history(sender, instance, created, **kwargs):
             returned_date=date.today(),
             condition_on_return=instance.status,
         )
+
+

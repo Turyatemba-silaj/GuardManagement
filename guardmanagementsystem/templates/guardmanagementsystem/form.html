@@ -118,11 +118,12 @@ document.addEventListener("DOMContentLoaded", function () {
     clientSelect.addEventListener("change", function () {
         refreshDevices(false);
     });
-    deviceSelect.addEventListener("change", maybeFillLocation);
+    deviceSelect.addEventListener("change", syncContractFromDevice);
 
     refreshDevices(true);
 });
 </script>
 {% endif %}
 {% endblock %}
+
 

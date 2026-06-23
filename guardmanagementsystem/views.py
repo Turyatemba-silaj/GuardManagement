@@ -55,6 +55,7 @@ from .forms import (
     ContractForm,
     DeploymentForm,
     DeploymentGuardForm,
+    DeploymentGuardBulkForm,
     EmailOrUsernameAuthenticationForm,
     GuardForm,
     IncidentForm,
@@ -454,14 +455,12 @@ def active_assignments_for_iot_device(device, work_date=None):
         "deployment__client",
         "deployment__contract",
         "guard",
-    ).prefetch_related(
-        "deployment__contract__rfid_cards",
     ).filter(
         deployment_date=work_date,
         deployment__status__in=ACTIVE_DEPLOYMENT_STATUSES,
         deployment__start_date__lte=work_date,
         guard__status="Active",
-        deployment__contract__rfid_cards__status="Active",
+        guard__rfid_card__status="Active",
     ).filter(
         Q(deployment__end_date__isnull=True) | Q(deployment__end_date__gte=work_date),
     )
@@ -500,7 +499,7 @@ def find_active_assignments_by_card(card_id, site_location=None, device=None, wo
             deployment__status__in=ACTIVE_DEPLOYMENT_STATUSES,
             deployment__start_date__lte=work_date,
             guard__status="Active",
-            deployment__contract__rfid_cards__status="Active",
+            guard__rfid_card__status="Active",
         ).filter(
             Q(deployment__end_date__isnull=True) | Q(deployment__end_date__gte=work_date),
         )
@@ -509,8 +508,8 @@ def find_active_assignments_by_card(card_id, site_location=None, device=None, wo
         assignments = assignments.filter(deployment__site_location=site_location)
 
     return list(assignments.filter(
-        Q(deployment__contract__rfid_cards__card_uid=card_id) |
-        Q(deployment__contract__rfid_cards__card_number=card_id)
+        Q(guard__rfid_card__card_uid=card_id) |
+        Q(guard__rfid_card__card_number=card_id)
     ).distinct().order_by("deployment_guard_id"))
 
 
@@ -527,23 +526,16 @@ def iot_device_swipe_options_data(device):
 
     cards = []
     seen_cards = set()
-    contracts = {}
-    for assignment in assignments.order_by("deployment__contract_id", "deployment__site_location"):
-        contract = assignment.deployment.contract
-        if not contract:
+    for assignment in assignments.order_by("guard__full_name", "deployment__site_location"):
+        card = assignment.guard.rfid_card
+        if not card or card.status != "Active" or card.rfid_card_id in seen_cards:
             continue
-        contracts[contract.contract_id] = contract
-
-    for contract in contracts.values():
-        for card in contract.rfid_cards.filter(status="Active").order_by("card_number", "card_uid"):
-            if card.rfid_card_id in seen_cards:
-                continue
-            seen_cards.add(card.rfid_card_id)
-            cards.append({
-                "value": card.card_uid,
-                "label": f"{card.card_number} - {contract.contract_number} - {contract.client.client_name}",
-                "card_number": card.card_number,
-            })
+        seen_cards.add(card.rfid_card_id)
+        cards.append({
+            "value": card.card_uid,
+            "label": f"{card.card_number} - {assignment.guard.guard_number or '-'} - {assignment.guard.full_name}",
+            "card_number": card.card_number,
+        })
 
     return {"sites": sites, "cards": cards}
 
@@ -839,9 +831,9 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
     current_time = timezone.localtime().time()
     assignments = find_active_assignments_by_card(card_id, site_location, device, today)
     if not assignments:
-        return False, "No active contract at this client site is assigned to this RFID card today.", None
+        return False, "Guard is not actively deployed at this site today.", None
     if len(assignments) > 1:
-        return False, "This contract RFID card matches multiple deployed guards today. Use a card that identifies one deployed guard or reduce the active deployment selection.", None
+        return False, "This RFID card matches multiple deployed guards today. Check the guard deployment selection.", None
 
     assignment = assignments[0]
     guard = assignment.guard
@@ -859,7 +851,7 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
             return False, "Select an active replacement guard.", None
 
         if replacement_guard == guard:
-            return False, "Replacement guard cannot be the same as the absent assigned RFID guard.", None
+            return False, "Replacement guard cannot be the same as the absent assigned guard.", None
 
         attendance, _ = Attendance.objects.get_or_create(
             guard=guard,
@@ -868,7 +860,7 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
         )
         attendance.status = "Absent"
         attendance.replacement_guard = replacement_guard
-        attendance.absence_reason = "Assigned RFID absent - replaced via IoT"
+        attendance.absence_reason = "Assigned guard absent - replaced via IoT"
         attendance.check_in_time = attendance.check_in_time or current_time
         attendance.check_out_time = attendance.check_out_time or current_time
         attendance.save()
@@ -2095,11 +2087,7 @@ def client_delete(request, id):
 
 @login_required
 def contract_list(request):
-    contracts = Contract.objects.select_related("client", "iot_device").prefetch_related(
-        "rfid_cards"
-    ).order_by("-start_date", "contract_number")
-    for contract in contracts:
-        contract.assigned_rfid_cards = ", ".join(contract.rfid_cards.values_list("card_number", flat=True)) or "-"
+    contracts = Contract.objects.select_related("client", "iot_device").order_by("-start_date", "contract_number")
     return show_records(request, contracts, "guardmanagementsystem/contract_list.html", "contracts")
 
 
@@ -2444,7 +2432,37 @@ def deployment_guard_list(request):
 
 @login_required
 def deployment_guard_add(request):
-    return add_record(request, DeploymentGuardForm, "Add Guard Deployment", "deployment_guard_list", "Guard deployment added successfully.")
+    if request.method == "POST":
+        form = DeploymentGuardBulkForm(request.POST)
+        if form.is_valid():
+            deployment = form.cleaned_data["deployment"]
+            deployment_date = form.cleaned_data["deployment_date"]
+            check_in_time = form.cleaned_data.get("check_in_time")
+            check_out_time = form.cleaned_data.get("check_out_time")
+            created_count = 0
+
+            with transaction.atomic():
+                for guard in form.cleaned_data["guards"]:
+                    DeploymentGuard.objects.create(
+                        deployment=deployment,
+                        guard=guard,
+                        deployment_date=deployment_date,
+                        check_in_time=check_in_time,
+                        check_out_time=check_out_time,
+                    )
+                    created_count += 1
+
+            log_action(request, "CREATE", f"Assigned {created_count} guard(s) to {deployment} for swipe attendance.")
+            messages.success(request, f"Assigned {created_count} guard(s) for swipe attendance.")
+            return redirect("deployment_guard_list")
+    else:
+        form = DeploymentGuardBulkForm()
+
+    return render(request, "guardmanagementsystem/form.html", {
+        "form": form,
+        "title": "Add Guard Deployment",
+        "button_text": "Assign Guards",
+    })
 
 
 @login_required
@@ -2458,7 +2476,6 @@ def deployment_guard_edit(request, id):
         "deployment_guard_list",
         "Guard deployment updated successfully.",
     )
-
 
 @login_required
 def deployment_guard_delete(request, id):
@@ -2649,7 +2666,7 @@ def iot_swipe_attendance(request):
         replacement_guard_id = None
 
         if action in ["mark_absent", "absent", "replace"] and replacement_card_id == card_id:
-            messages.error(request, "Replacement RFID card cannot be the same as the absent assigned RFID card.")
+            messages.error(request, "Replacement RFID card cannot be the same as the absent guard RFID card.")
             return redirect("iot_swipe_attendance")
 
 
@@ -2661,7 +2678,7 @@ def iot_swipe_attendance(request):
                 for card in iot_device_swipe_options_data(device)["cards"]
             }
             if card_id not in allowed_card_values:
-                messages.error(request, "Select an RFID card assigned to the selected IoT device today.")
+                messages.error(request, "Select an RFID card for a guard assigned to the selected IoT device today.")
             elif replacement_card_id and replacement_card_id not in allowed_card_values:
                 messages.error(request, "Select a replacement RFID card assigned to the selected IoT device today.")
             else:
@@ -3126,3 +3143,4 @@ def incident_edit(request, id):
 @login_required
 def incident_delete(request, id):
     return delete_record(request, Incident, {"incident_id": id}, "Delete Incident", "incident_list", "Incident deleted successfully.")
+

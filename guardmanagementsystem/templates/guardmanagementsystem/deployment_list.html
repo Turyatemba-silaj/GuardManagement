@@ -24,9 +24,7 @@
             <thead>
                 <tr>
                     <th>Deployment ID</th>
-                    <th>Client</th>
                     <th>Contract</th>
-                    <th>Location</th>
                     <th>Required Guards</th>
                     <th>Day Shift</th>
                     <th>Night Shift</th>
@@ -41,9 +39,7 @@
                 {% for deployment in deployments %}
                     <tr>
                         <td>{{ deployment.deployment_id }}</td>
-                        <td>{{ deployment.client.client_name|default:"-" }}</td>
                         <td>{{ deployment.contract.contract_number|default:"-" }}</td>
-                        <td>{{ deployment.site_location }}</td>
                         <td>{{ deployment.required_guard_count|default:"-" }}</td>
                         <td>{{ deployment.day_shift_count|default:"-" }}</td>
                         <td>{{ deployment.night_shift_count|default:"-" }}</td>
@@ -84,7 +80,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="11" class="text-center text-muted py-4">
+                        <td colspan="9" class="text-center text-muted py-4">
                             No deployments found.
                         </td>
                     </tr>
@@ -94,3 +90,5 @@
     </div>
 </div>
 {% endblock %}
+
+

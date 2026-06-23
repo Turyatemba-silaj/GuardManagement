@@ -19,7 +19,6 @@
                     <th>Device Name</th>
                     <th>Device Code</th>
                     <th>API Key</th>
-                    <th>Client</th>
                     <th>Assigned Guards</th>
                     <th>Site Location</th>
                     <th>Status</th>
@@ -32,7 +31,6 @@
                         <td>{{ device.device_name }}</td>
                         <td>{{ device.device_code }}</td>
                         <td><code>{{ device.api_key }}</code></td>
-                        <td>{{ device.client|default:"-" }}</td>
                         <td>
                             {% if device.deployment %}
                                 {% for assignment in device.deployment.deployment_guards.all %}
@@ -65,7 +63,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No IoT devices found.</td>
+                        <td colspan="7" class="text-center text-muted py-4">No IoT devices found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -73,3 +71,5 @@
     </div>
 </div>
 {% endblock %}
+
+

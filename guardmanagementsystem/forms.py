@@ -132,6 +132,9 @@ class GuardForm(forms.ModelForm):
         exclude = ['user']
 
         widgets = {
+            'rfid_card': forms.Select(attrs={
+                'class': 'form-control'
+            }),
             'full_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter guard full name'
@@ -195,7 +198,6 @@ class RFIDCardForm(forms.ModelForm):
 class IoTDeviceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['client'].queryset = Client.objects.order_by('client_name')
         self.fields['deployment'].queryset = Deployment.objects.select_related('client').order_by('client__client_name', 'site_location')
         self.fields['deployment'].label_from_instance = (
             lambda deployment: f"{deployment.client.client_name} - {deployment.site_location}"
@@ -206,32 +208,24 @@ class IoTDeviceForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        client = cleaned_data.get('client')
         deployment = cleaned_data.get('deployment')
 
         if not deployment:
             raise forms.ValidationError("Select a deployment so the device can pick its client and site.")
 
-        if client and deployment.client_id != client.client_id:
-            raise forms.ValidationError("Selected deployment does not belong to the selected client.")
-
-        cleaned_data['client'] = deployment.client
         return cleaned_data
 
     class Meta:
         model = IoTDevice
-        fields = ['client', 'deployment', 'device_name', 'device_code', 'api_key', 'is_active']
+        fields = ['deployment', 'device_name', 'device_code', 'api_key', 'is_active']
 
         widgets = {
-            'client': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'deployment': forms.Select(attrs={
                 'class': 'form-control'
             }),
             'device_name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Auto-generated from client and location if blank'
+                'placeholder': 'Auto-generated from deployment if blank'
             }),
             'device_code': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -298,8 +292,6 @@ class ContractForm(forms.ModelForm):
             lambda device: f"{device.client.client_name if device.client else 'Unassigned'} - {device.site_location}"
         )
         self.fields['iot_device'].help_text = "Pick an active IoT device from the IoT Device table."
-        self.fields['rfid_cards'].queryset = RFIDCard.objects.filter(status="Active").order_by('card_number', 'card_uid')
-        self.fields['rfid_cards'].help_text = "Select the RFID card(s) authorized for this client contract."
         self.fields['contract_number'].required = False
         self.fields['contract_number'].help_text = "Leave blank to generate the next contract number."
 
@@ -315,7 +307,6 @@ class ContractForm(forms.ModelForm):
             'contract_type',
             'location',
             'iot_device',
-            'rfid_cards',
             'start_date',
             'end_date',
             'status',
@@ -357,10 +348,6 @@ class ContractForm(forms.ModelForm):
             'iot_device': forms.Select(attrs={
                 'class': 'form-control'
             }),
-            'rfid_cards': forms.SelectMultiple(attrs={
-                'class': 'form-control',
-                'size': '5'
-            }),
             'start_date': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date'
@@ -383,7 +370,6 @@ class ContractForm(forms.ModelForm):
 class DeploymentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['client'].queryset = Client.objects.order_by('client_name')
         used_contract_ids = Deployment.objects.exclude(contract__isnull=True)
         if self.instance and self.instance.pk:
             used_contract_ids = used_contract_ids.exclude(pk=self.instance.pk)
@@ -397,75 +383,51 @@ class DeploymentForm(forms.ModelForm):
             'client__client_name',
             'contract_number',
         )
-        self.fields['contract'].required = False
+        self.fields['contract'].required = True
         self.fields['contract'].label_from_instance = (
             lambda contract: f"{contract.contract_number} - {contract.client.client_name} - {contract.location or 'No location'} ({contract.number_of_guards} guards: D {contract.day_shift_guards}, N {contract.night_shift_guards})"
         )
-        for field_name in ['client', 'site_location', 'start_date', 'end_date']:
-            self.fields[field_name].required = False
-        self.fields['client'].help_text = "Auto-filled from the selected contract."
-        self.fields['site_location'].help_text = "Auto-filled from the selected contract location when left blank."
+        self.fields['start_date'].required = False
+        self.fields['end_date'].required = False
         self.fields['start_date'].help_text = "Auto-filled from the contract start date when left blank."
         self.fields['end_date'].help_text = "Auto-filled from the contract end date when left blank."
 
     def clean(self):
         cleaned_data = super().clean()
-        client = cleaned_data.get('client')
         contract = cleaned_data.get('contract')
 
-        if contract:
-            if client and contract.client_id != client.client_id:
-                raise forms.ValidationError("Selected contract does not belong to the selected client.")
+        if not contract:
+            self.add_error('contract', "Select a contract for this deployment.")
+            return cleaned_data
 
-            duplicate = Deployment.objects.filter(contract=contract)
-            if self.instance.pk:
-                duplicate = duplicate.exclude(pk=self.instance.pk)
-            if duplicate.exists():
-                self.add_error('contract', "This contract is already linked to another deployment.")
+        duplicate = Deployment.objects.filter(contract=contract)
+        if self.instance.pk:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            self.add_error('contract', "This contract is already linked to another deployment.")
 
-            cleaned_data['client'] = contract.client
-
-            if not cleaned_data.get('site_location'):
-                cleaned_data['site_location'] = contract.location
-            if not cleaned_data.get('start_date'):
-                cleaned_data['start_date'] = contract.start_date
-            if not cleaned_data.get('end_date'):
-                cleaned_data['end_date'] = contract.end_date
-        else:
-            required_fields = {
-                'client': 'Select a client or choose a contract.',
-                'site_location': 'Enter a site location or choose a contract.',
-                'start_date': 'Enter a start date or choose a contract.',
-            }
-            for field_name, message in required_fields.items():
-                if not cleaned_data.get(field_name):
-                    self.add_error(field_name, message)
+        cleaned_data['client'] = contract.client
+        cleaned_data['site_location'] = contract.location
+        if not cleaned_data.get('start_date'):
+            cleaned_data['start_date'] = contract.start_date
+        if not cleaned_data.get('end_date'):
+            cleaned_data['end_date'] = contract.end_date
 
         return cleaned_data
 
     class Meta:
         model = Deployment
         fields = [
-            'client',
             'contract',
-            'site_location',
             'shift',
             'start_date',
             'end_date',
             'status',
         ]
-            
-        
+
         widgets = {
-            'client': forms.Select(attrs={
-                'class': 'form-control'
-            }),
             'contract': forms.Select(attrs={
                 'class': 'form-control'
-            }),
-            'site_location': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Enter site location'
             }),
             'shift': forms.Select(attrs={
                 'class': 'form-control'
@@ -559,6 +521,86 @@ class DeploymentGuardForm(forms.ModelForm):
             }),
         }
 
+class DeploymentGuardBulkForm(forms.Form):
+    deployment = forms.ModelChoiceField(
+        queryset=Deployment.objects.none(),
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+    guards = forms.ModelMultipleChoiceField(
+        queryset=Guard.objects.none(),
+        label="Guards",
+        help_text="Tick all guards to assign for swipe attendance on this deployment date.",
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'guard-checkbox-list'})
+    )
+    deployment_date = forms.DateField(
+        label="Deployment Date",
+        initial=date.today,
+        widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date'})
+    )
+    check_in_time = forms.TimeField(
+        required=False,
+        label="Check In",
+        widget=forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'})
+    )
+    check_out_time = forms.TimeField(
+        required=False,
+        label="Check Out",
+        widget=forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'})
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['deployment'].queryset = Deployment.objects.select_related('client', 'contract').order_by(
+            'client__client_name',
+            'site_location',
+        )
+        self.fields['deployment'].label_from_instance = (
+            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location} ({deployment.status})"
+        )
+        self.fields['guards'].queryset = Guard.objects.filter(status="Active").order_by('full_name')
+
+    def clean(self):
+        cleaned_data = super().clean()
+        deployment = cleaned_data.get('deployment')
+        guards = list(cleaned_data.get('guards') or [])
+        deployment_date = cleaned_data.get('deployment_date')
+        check_in_time = cleaned_data.get('check_in_time')
+        check_out_time = cleaned_data.get('check_out_time')
+
+        if check_in_time and check_out_time and check_out_time < check_in_time:
+            raise forms.ValidationError("Guard deployment check out cannot be before check in.")
+
+        if deployment and deployment_date:
+            if deployment_date < deployment.start_date:
+                raise forms.ValidationError("Guard deployment date cannot be before the deployment start date.")
+
+            if deployment.end_date and deployment_date > deployment.end_date:
+                raise forms.ValidationError("Guard deployment date cannot be after the deployment end date.")
+
+        if deployment and guards and deployment_date:
+            duplicate_names = list(DeploymentGuard.objects.filter(
+                deployment=deployment,
+                guard__in=guards,
+                deployment_date=deployment_date,
+            ).values_list('guard__full_name', flat=True))
+
+            if duplicate_names:
+                raise forms.ValidationError(
+                    "Already assigned on this deployment date: " + ", ".join(duplicate_names)
+                )
+
+            if deployment.contract_id:
+                active_statuses = ["Active", "Running", "On Deployment", "Available", "Has No Deployment"]
+                existing_guard_ids = set(DeploymentGuard.objects.filter(
+                    deployment__contract=deployment.contract,
+                    deployment__status__in=active_statuses,
+                    deployment_date=deployment_date,
+                ).values_list('guard_id', flat=True))
+                new_guard_ids = {guard.guard_id for guard in guards}
+                if len(existing_guard_ids | new_guard_ids) > deployment.contract.number_of_guards:
+                    raise forms.ValidationError("you have excedd contacted number of guards")
+
+        return cleaned_data
 
 class ProgramGuardForm(forms.ModelForm):
     guard = forms.ModelChoiceField(
@@ -876,3 +918,4 @@ class IncidentForm(forms.ModelForm):
                 'class': 'form-control'
             }),
         }
+

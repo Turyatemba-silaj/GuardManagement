@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import ClientForm, DeploymentGuardForm, GuardForm, UserCreateForm
+from .forms import ClientForm, DeploymentGuardBulkForm, DeploymentGuardForm, GuardForm, UserCreateForm
 from .models import Attendance, AttendanceSwipe, Client, Contract, Deployment, DeploymentGuard, Guard, IoTDevice, RFIDCard, Salary
 from .role_access import nav_permissions, user_can_access
 
@@ -144,15 +144,14 @@ class DeploymentContractLimitTests(TestCase):
             DeploymentGuard.objects.create(
                 deployment=self.deployment,
                 guard=guard,
-                start_date=timezone.localdate(),
+                deployment_date=timezone.localdate(),
             )
 
     def test_deployment_guard_form_blocks_guards_above_contract_limit(self):
-        form = DeploymentGuardForm(data={
+        form = DeploymentGuardBulkForm(data={
             "deployment": self.deployment.deployment_id,
-            "guard": self.guards[2].guard_id,
-            "start_date": timezone.localdate().isoformat(),
-            "end_date": "",
+            "guards": [self.guards[2].guard_id],
+            "deployment_date": timezone.localdate().isoformat(),
         })
 
         self.assertFalse(form.is_valid())
@@ -191,7 +190,7 @@ class IoTAttendanceApiTests(TestCase):
         DeploymentGuard.objects.create(
             deployment=self.deployment,
             guard=self.guard,
-            start_date=timezone.localdate(),
+            deployment_date=timezone.localdate(),
         )
         self.device = IoTDevice.objects.create(
             deployment=self.deployment,
@@ -275,7 +274,7 @@ class IoTAttendanceApiTests(TestCase):
         DeploymentGuard.objects.create(
             deployment=self.deployment,
             guard=extra_guard,
-            start_date=timezone.localdate(),
+            deployment_date=timezone.localdate(),
         )
         contract.number_of_guards = 1
         contract.save(update_fields=["number_of_guards"])
@@ -326,3 +325,4 @@ class IoTAttendanceApiTests(TestCase):
         thirteenth_response = self.post_swipe()
         self.assertEqual(thirteenth_response.status_code, 400)
         self.assertEqual(AttendanceSwipe.objects.filter(attendance=attendance).count(), 12)
+

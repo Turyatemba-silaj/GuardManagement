@@ -5,10 +5,10 @@
 #include <SPI.h>
 #include <MFRC522.h>
 
-const char* WIFI_SSID = "Silaj";
-const char* WIFI_PASSWORD = "turyatemba";
+const char* WIFI_SSID = "lab4";
+const char* WIFI_PASSWORD = "123456789";
 
-const char* ATTENDANCE_API_URL = "http://10.10.6.253:8000/api/iot/attendance/";
+const char* ATTENDANCE_API_URL = "http://192.168.137.71:8000/api/iot/attendance/";
 
 const char* DEVICE_CODE = "GATE-005-KAMPALA-ROAD-001";
 const char* API_KEY = "baEQJpikiu2v6mGjam7_0wIu2vcuQfEl";

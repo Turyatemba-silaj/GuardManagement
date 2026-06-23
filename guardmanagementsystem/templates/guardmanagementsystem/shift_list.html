@@ -23,7 +23,6 @@
                 <tr>
                     <th>Shift Id</th>
                     <th>Shift Name</th>
-                    <th>Guard</th>
                     <th>Schedule Date</th>
                     <th>Time In</th>
                     <th>Time Out</th>
@@ -36,7 +35,6 @@
                     <tr>
                         <td>{{ shift.shift_id }}</td>
                         <td>{{ shift.shift_name }}</td>
-                        <td>{{ shift.guard }}</td>
                         <td>{{ shift.start_time|date:"M d, Y" }}</td>
                         <td>{{ shift.time_in_display }}</td>
                         <td>{{ shift.time_out_display }}</td>
@@ -54,7 +52,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No shifts found.</td>
+                        <td colspan="7" class="text-center text-muted py-4">No shifts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -62,5 +60,7 @@
     </div>
 </div>
 {% endblock %}
+
+
 
 
