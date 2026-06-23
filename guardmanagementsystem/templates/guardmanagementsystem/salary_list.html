@@ -70,6 +70,9 @@
                                     <a href="{% url 'salary_payslip_from_attendance' salary.guard_id salary.year salary.month_number %}" class="btn btn-sm btn-outline-success">
                                         <i class="fa fa-file-invoice-dollar me-1"></i> Generate
                                     </a>
+                                    <a href="{% url 'salary_attendance_summary' salary.guard_id salary.year salary.month_number %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fa fa-list-check me-1"></i> Summary
+                                    </a>
                                 {% elif salary.salary_id %}
                                     <a href="{% url 'salary_payslip_individual' salary.salary_id %}" class="btn btn-sm btn-outline-success">
                                         <i class="fa fa-file-invoice-dollar me-1"></i> Generate

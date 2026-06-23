@@ -444,6 +444,36 @@ def get_matching_deployment(guard, work_date, site=None, client_name=None):
     return matching_deployment_queryset_for_guard(guard, work_date, site, client_name).first()
 
 
+def get_deployment_from_attendance_swipes(attendance):
+    device_ids = [
+        swipe.iot_device_id
+        for swipe in attendance.swipes.all()
+        if swipe.iot_device_id
+    ]
+    if not device_ids:
+        return None
+
+    return (
+        Deployment.objects.select_related("client", "contract")
+        .filter(
+            contract__iot_device_id__in=device_ids,
+            start_date__lte=attendance.attendance_date,
+        )
+        .filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=attendance.attendance_date)
+        )
+        .order_by("-deployment_id")
+        .first()
+    )
+
+
+def get_attendance_deployment(attendance, site=None, client_name=None):
+    deployment = get_matching_deployment(attendance.guard, attendance.attendance_date, site, client_name)
+    if deployment:
+        return deployment
+    return get_deployment_from_attendance_swipes(attendance)
+
+
 
 def active_assignments_for_iot_device(device, work_date=None):
     work_date = work_date or timezone.localdate()
@@ -465,16 +495,7 @@ def active_assignments_for_iot_device(device, work_date=None):
         Q(deployment__end_date__isnull=True) | Q(deployment__end_date__gte=work_date),
     )
 
-    device_filters = Q()
-    if device.deployment_id:
-        device_filters |= Q(deployment_id=device.deployment_id)
-    device_filters |= Q(deployment__contract__iot_device=device)
-    if device.client_id:
-        device_filters |= Q(deployment__client_id=device.client_id, deployment__site_location=device.site_location)
-    else:
-        device_filters |= Q(deployment__site_location=device.site_location)
-
-    return assignments.filter(device_filters).distinct()
+    return assignments.filter(deployment__contract__iot_device=device).distinct()
 
 
 
@@ -521,9 +542,6 @@ def iot_device_swipe_options_data(device):
         .distinct()
         .order_by("deployment__site_location")
     )
-    if device and device.site_location and device.site_location not in sites:
-        sites.insert(0, device.site_location)
-
     cards = []
     seen_cards = set()
     for assignment in assignments.order_by("guard__full_name", "deployment__site_location"):
@@ -538,6 +556,11 @@ def iot_device_swipe_options_data(device):
         })
 
     return {"sites": sites, "cards": cards}
+
+
+def infer_single_site_for_iot_device(device):
+    sites = iot_device_swipe_options_data(device)["sites"]
+    return sites[0] if len(sites) == 1 else ""
 
 
 def contract_guard_limit_exceeded_for_deployment(deployment, work_date):
@@ -583,17 +606,26 @@ def get_or_create_deployment_for_schedule(guard, client, site_location, start_da
     return deployment, created
 
 
-def ensure_guard_deployment_for_date(deployment, guard, deployment_date):
+def ensure_guard_deployment_for_date(deployment, guard, deployment_date, shift_type='D'):
     assignment, created = DeploymentGuard.objects.get_or_create(
         deployment=deployment,
         guard=guard,
         deployment_date=deployment_date,
-        defaults={"status": GUARD_DEPLOYMENT_STATUS_AVAILABLE},
+        defaults={
+            "status": GUARD_DEPLOYMENT_STATUS_AVAILABLE,
+            "shift_type": shift_type or 'D',
+        },
     )
 
+    update_fields = []
     if assignment.status == "Cancelled":
         assignment.status = GUARD_DEPLOYMENT_STATUS_AVAILABLE
-        assignment.save(update_fields=["status"])
+        update_fields.append("status")
+    if shift_type and assignment.shift_type != shift_type:
+        assignment.shift_type = shift_type
+        update_fields.append("shift_type")
+    if update_fields:
+        assignment.save(update_fields=update_fields)
 
     return assignment, created
 
@@ -609,18 +641,9 @@ def update_deployment_after_iot_swipe(guard, work_date, site_location, status, s
     ).order_by("-deployment_guard_id").first()
 
     if assignment:
-        update_fields = []
         if assignment.status != status:
             assignment.status = status
-            update_fields.append("status")
-        if status == GUARD_DEPLOYMENT_STATUS_ON_SITE and swipe_time and not assignment.check_in_time:
-            assignment.check_in_time = swipe_time
-            update_fields.append("check_in_time")
-        if status == GUARD_DEPLOYMENT_STATUS_AVAILABLE and swipe_time:
-            assignment.check_out_time = swipe_time
-            update_fields.append("check_out_time")
-        if update_fields:
-            assignment.save(update_fields=update_fields)
+            assignment.save(update_fields=["status"])
 
     return deployment
 
@@ -690,6 +713,49 @@ def build_recent_attendance_salary_rows(guard_id=None, year=None, month=None):
         salary_rows_by_guard_month.values(),
         key=lambda salary: (salary.year, salary.payment_date, str(salary.employee)),
         reverse=True,
+    )
+
+
+def build_guard_month_attendance_summary(guard, year, month):
+    month_start = date(year, month, 1)
+    month_end = date(year, month, monthrange(year, month)[1])
+    attendances = (
+        recent_attendance_records()
+        .filter(
+            Q(guard=guard, status__in=["Present", "Late"]) |
+            Q(replacement_guard=guard, status="Absent"),
+            attendance_date__gte=month_start,
+            attendance_date__lte=month_end,
+            check_out_time__isnull=False,
+        )
+        .order_by("attendance_date", "check_in_time", "attendance_id")
+    )
+
+    rows = []
+    for attendance in attendances:
+        deployment = get_attendance_deployment(attendance)
+        shift = get_attendance_shift(attendance, deployment)
+        rows.append(SimpleNamespace(
+            attendance=attendance,
+            deployment_date=attendance.attendance_date,
+            client=deployment.client.client_name if deployment else "-",
+            contract=deployment.contract.contract_number if deployment and deployment.contract else "-",
+            site_location=deployment.site_location if deployment else "-",
+            shift_type=get_shift_code(shift) if shift else "-",
+            amount=money(guard.daily_rate),
+            role="Replacement" if attendance.replacement_guard_id == guard.guard_id else "Assigned",
+        ))
+
+    total_shifts_done = len(rows)
+    return SimpleNamespace(
+        guard=guard,
+        year=year,
+        month=month,
+        month_name=month_start.strftime("%B"),
+        rows=rows,
+        total_shifts_done=total_shifts_done,
+        daily_rate=money(guard.daily_rate),
+        total_expected_amount=money(total_shifts_done * guard.daily_rate),
     )
 
 
@@ -839,9 +905,6 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
     guard = assignment.guard
     deployment = assignment.deployment
 
-    if device and device.client_id and deployment.client_id != device.client_id:
-        return False, "This guard is not deployed to the client attached to this IoT device.", None
-
     if contract_guard_limit_exceeded_for_deployment(deployment, today):
         return False, "you have excedd contacted number of guards", None
 
@@ -970,8 +1033,9 @@ def get_shift_code(shift):
     if shift_type in shift_code_map:
         return shift_code_map[shift_type]
 
-    if shift and shift.shift_name:
-        code_match = re.search(r"\(([A-Z]+)\)\s*$", shift.shift_name.strip(), re.IGNORECASE)
+    shift_name = getattr(shift, "shift_name", "")
+    if shift_name:
+        code_match = re.search(r"\(([A-Z]+)\)\s*$", shift_name.strip(), re.IGNORECASE)
         if code_match:
             return shift_code_map.get(code_match.group(1).upper(), code_match.group(1).upper())
 
@@ -980,6 +1044,17 @@ def get_shift_code(shift):
 
 
 def get_attendance_shift(attendance, deployment=None):
+    assignment_filters = {
+        "guard": attendance.guard,
+        "deployment_date": attendance.attendance_date,
+    }
+    if deployment:
+        assignment_filters["deployment"] = deployment
+
+    assignment = DeploymentGuard.objects.filter(**assignment_filters).order_by("-deployment_guard_id").first()
+    if assignment:
+        return assignment
+
     shift = Shift.objects.filter(
         guard=attendance.guard,
         start_time=attendance.attendance_date,
@@ -988,6 +1063,10 @@ def get_attendance_shift(attendance, deployment=None):
         return shift
     if deployment and deployment.shift_id:
         return deployment.shift
+    attendance_time = attendance.check_in_time or attendance.check_out_time
+    if attendance_time:
+        inferred_shift_type = "N" if attendance_time >= time(18, 0) else "D"
+        return SimpleNamespace(shift_type=inferred_shift_type, shift_name=f"Inferred Shift ({inferred_shift_type})")
     return None
 
 def normalize_header(value):
@@ -1624,8 +1703,7 @@ def roster_default_contract(contract_id=None):
 def deployment_iot_device_code(deployment, contract=None):
     if contract and contract.iot_device:
         return contract.iot_device.device_code
-    device = deployment.iot_devices.order_by("device_code").first() if deployment else None
-    return device.device_code if device else ""
+    return ""
 
 
 def build_roster_xlsx(schedule_year, schedule_month, contract_id=None):
@@ -2094,21 +2172,27 @@ def contract_list(request):
 @login_required
 def contract_iot_devices(request):
     selected_id = request.GET.get("selected_id")
-    devices = IoTDevice.objects.select_related("client").filter(is_active=True)
+    unavailable_device_ids = Contract.objects.filter(
+        iot_device__isnull=False,
+        status__in=["Draft", "Active"],
+    )
+    if selected_id:
+        unavailable_device_ids = unavailable_device_ids.exclude(iot_device_id=selected_id)
+    unavailable_device_ids = unavailable_device_ids.values_list("iot_device_id", flat=True)
+
+    devices = IoTDevice.objects.filter(is_active=True).exclude(pk__in=unavailable_device_ids)
 
     if selected_id:
-        devices = IoTDevice.objects.select_related("client").filter(
+        devices = IoTDevice.objects.filter(
             Q(pk=selected_id) | Q(pk__in=devices.values("pk"))
         )
 
     payload = []
-    for device in devices.order_by("client__client_name", "site_location", "device_name"):
-        client_name = device.client.client_name if device.client else "Unassigned"
+    for device in devices.order_by("device_number"):
         payload.append({
             "id": device.device_id,
-            "label": f"{client_name} - {device.site_location}",
-            "site_location": device.site_location,
-            "client_id": device.client_id,
+            "label": f"{device.device_number} ({device.device_code})",
+            "site_location": "",
         })
 
     return JsonResponse({"devices": payload})
@@ -2254,6 +2338,65 @@ def scheduled_guard_count_for_site(client, site_location, shift_date, exclude_gu
     return scheduled_shifts.values("guard_id").distinct().count()
 
 
+def deployment_month_bounds(deployment, target_date):
+    month_start = date(target_date.year, target_date.month, 1)
+    month_end = date(target_date.year, target_date.month, monthrange(target_date.year, target_date.month)[1])
+    schedule_start = max(month_start, deployment.start_date)
+    schedule_end = min(month_end, deployment.end_date) if deployment.end_date else month_end
+    return schedule_start, schedule_end
+
+
+def has_protected_attendance_for_guard(guard, deployment_date):
+    return Attendance.objects.filter(
+        guard=guard,
+        attendance_date=deployment_date,
+    ).filter(
+        Q(check_in_time__isnull=False) |
+        Q(check_out_time__isnull=False)
+    ).exists()
+
+
+def generate_monthly_deployment_guards(deployment, guards, target_date, shift_type='D'):
+    schedule_start, schedule_end = deployment_month_bounds(deployment, target_date)
+    result = {
+        "created": 0,
+        "existing": 0,
+        "protected": 0,
+        "outside_range": schedule_start > schedule_end,
+        "start": schedule_start,
+        "end": schedule_end,
+    }
+
+    if result["outside_range"]:
+        return result
+
+    current_date = schedule_start
+    while current_date <= schedule_end:
+        for guard in guards:
+            assignment, created = DeploymentGuard.objects.get_or_create(
+                deployment=deployment,
+                guard=guard,
+                deployment_date=current_date,
+                defaults={
+                    "shift_type": shift_type or 'D',
+                },
+            )
+
+            if created:
+                result["created"] += 1
+            elif has_protected_attendance_for_guard(guard, current_date):
+                result["protected"] += 1
+            else:
+                if shift_type and assignment.shift_type != shift_type:
+                    assignment.shift_type = shift_type
+                    assignment.save(update_fields=["shift_type"])
+                result["existing"] += 1
+
+        current_date += timedelta(days=1)
+
+    return result
+
+
 @login_required
 def program_guard(request):
     today = timezone.localdate()
@@ -2373,6 +2516,7 @@ def program_guard(request):
                                 guard_deployment,
                                 scheduled_guard,
                                 shift_date,
+                                shift_type,
                             )
                             if assignment_created:
                                 created_daily_assignments += 1
@@ -2411,7 +2555,46 @@ def program_guard(request):
 
 @login_required
 def deployment_edit(request, id):
-    return edit_record(request, Deployment, DeploymentForm, {"deployment_id": id}, "Edit Deployment", "deployment_list", "Deployment updated successfully.")
+    deployment = get_object_or_404(Deployment, deployment_id=id)
+    old_values = {
+        "contract_id": deployment.contract_id,
+        "client_id": deployment.client_id,
+        "site_location": deployment.site_location,
+        "start_date": deployment.start_date,
+        "end_date": deployment.end_date,
+        "status": deployment.status,
+    }
+
+    if request.method == "POST":
+        form = DeploymentForm(request.POST, instance=deployment)
+        if form.is_valid():
+            deployment = form.save()
+            changed_fields = [
+                field for field, old_value in old_values.items()
+                if getattr(deployment, field) != old_value
+            ]
+            log_action(request, "UPDATE", f"Updated {deployment}.")
+            messages.success(request, "Deployment updated successfully.")
+
+            if changed_fields:
+                affected_assignments = DeploymentGuard.objects.filter(
+                    deployment=deployment,
+                    deployment_date__gte=timezone.localdate(),
+                ).exists()
+                if affected_assignments:
+                    messages.warning(
+                        request,
+                        "This deployment already has generated guard deployment records. Review or regenerate the monthly schedule so attendance follows the updated deployment."
+                    )
+
+            return redirect("deployment_list")
+    else:
+        form = DeploymentForm(instance=deployment)
+
+    return render(request, "guardmanagementsystem/form.html", {
+        "form": form,
+        "title": "Edit Deployment",
+    })
 
 
 @login_required
@@ -2437,31 +2620,43 @@ def deployment_guard_add(request):
         if form.is_valid():
             deployment = form.cleaned_data["deployment"]
             deployment_date = form.cleaned_data["deployment_date"]
-            check_in_time = form.cleaned_data.get("check_in_time")
-            check_out_time = form.cleaned_data.get("check_out_time")
-            created_count = 0
+            shift_type = form.cleaned_data.get("shift_type")
+            guards = list(form.cleaned_data["guards"])
 
             with transaction.atomic():
-                for guard in form.cleaned_data["guards"]:
-                    DeploymentGuard.objects.create(
-                        deployment=deployment,
-                        guard=guard,
-                        deployment_date=deployment_date,
-                        check_in_time=check_in_time,
-                        check_out_time=check_out_time,
-                    )
-                    created_count += 1
+                result = generate_monthly_deployment_guards(
+                    deployment,
+                    guards,
+                    deployment_date,
+                    shift_type,
+                )
 
-            log_action(request, "CREATE", f"Assigned {created_count} guard(s) to {deployment} for swipe attendance.")
-            messages.success(request, f"Assigned {created_count} guard(s) for swipe attendance.")
+            log_action(
+                request,
+                "CREATE",
+                f"Generated monthly guard deployment for {deployment} from {result['start']} to {result['end']}.",
+            )
+
+            if result["outside_range"]:
+                messages.warning(request, "No guard deployment records were generated because the selected month is outside the deployment period.")
+            else:
+                messages.success(
+                    request,
+                    f"Generated monthly guard deployment from {result['start']:%b %d, %Y} to {result['end']:%b %d, %Y}. "
+                    f"Created {result['created']} record(s)."
+                )
+                if result["existing"]:
+                    messages.info(request, f"Skipped {result['existing']} existing deployment record(s).")
+                if result["protected"]:
+                    messages.warning(request, f"Skipped {result['protected']} record(s) that already had check-in/check-out or attendance.")
             return redirect("deployment_guard_list")
     else:
         form = DeploymentGuardBulkForm()
 
     return render(request, "guardmanagementsystem/form.html", {
         "form": form,
-        "title": "Add Guard Deployment",
-        "button_text": "Assign Guards",
+        "title": "Generate Monthly Guard Deployment",
+        "button_text": "Generate Month",
     })
 
 
@@ -2583,7 +2778,7 @@ def asset_lifecycle_action(request, id, action):
 
 @login_required
 def iot_device_list(request):
-    devices = IoTDevice.objects.all().order_by("site_location", "device_name")
+    devices = IoTDevice.objects.all().order_by("device_number")
     return show_records(request, devices, "guardmanagementsystem/iot_device_list.html", "devices")
 
 
@@ -2621,7 +2816,7 @@ def iot_swipe_options(request):
 def iot_swipe_attendance(request):
     is_guard_user = user_is_guard(request.user)
     current_guard = get_user_guard(request.user) if is_guard_user else None
-    devices = IoTDevice.objects.filter(is_active=True).order_by("site_location", "device_name")
+    devices = IoTDevice.objects.filter(is_active=True).order_by("device_number")
     site_locations = (
         Deployment.objects.exclude(site_location="")
         .values_list("site_location", flat=True)
@@ -2644,9 +2839,11 @@ def iot_swipe_attendance(request):
         attendance.employee_label = f"{earning_guard.guard_number or '-'} - {earning_guard.full_name}"
         attendance.guard_profile_label = f"{earning_guard.guard_number or '-'} - {earning_guard.full_name}"
 
-        deployment = get_matching_deployment(attendance.guard, attendance.attendance_date)
+        deployment = get_attendance_deployment(attendance)
         shift = get_attendance_shift(attendance, deployment)
         attendance.client_label = deployment.client.client_name if deployment else "-"
+        if deployment and deployment.contract_id:
+            attendance.client_label = f"{attendance.client_label} - {deployment.contract.contract_number}"
         attendance.shift_label = get_shift_code(shift) if shift else "No shift"
         attendance.status_label = f"Replacement for {attendance.guard.full_name}" if attendance.replacement_guard else attendance.status
         attendance.payroll_guard_id = earning_guard.guard_id
@@ -2682,16 +2879,19 @@ def iot_swipe_attendance(request):
             elif replacement_card_id and replacement_card_id not in allowed_card_values:
                 messages.error(request, "Select a replacement RFID card assigned to the selected IoT device today.")
             else:
+                if not current_site:
+                    current_site = infer_single_site_for_iot_device(device)
+
                 if replacement_card_id:
                     replacement_assignments = find_active_assignments_by_card(
                         replacement_card_id,
-                        current_site or device.site_location,
+                        current_site,
                         device,
                     )
                     replacement_guard_id = replacement_assignments[0].guard_id if len(replacement_assignments) == 1 else None
                 success, message, _ = record_iot_attendance(
                     card_id,
-                    current_site or device.site_location,
+                    current_site,
                     action,
                     replacement_guard_id,
                     device,
@@ -2752,7 +2952,7 @@ def iot_attendance_api(request):
             "message": "Invalid or inactive IoT device."
         }, status=403)
 
-    site_location = current_site or device.site_location
+    site_location = current_site or infer_single_site_for_iot_device(device)
     if replacement_card_id and not replacement_guard_id:
         replacement_assignments = find_active_assignments_by_card(replacement_card_id, site_location, device)
         replacement_guard_id = replacement_assignments[0].guard_id if len(replacement_assignments) == 1 else None
@@ -2766,7 +2966,7 @@ def iot_attendance_api(request):
     }
 
     if attendance:
-        deployment = get_matching_deployment(attendance.guard, attendance.attendance_date)
+        deployment = get_attendance_deployment(attendance)
         data.update({
             "guard": attendance.guard.full_name,
             "guard_number": attendance.guard.guard_number,
@@ -2948,6 +3148,23 @@ def salary_payslip_from_attendance(request, guard_id, year, month):
         "salary": salary,
         "payroll": build_salary_payroll_context(salary),
         "title": "Attendance Payslip",
+    })
+
+
+@login_required
+def salary_attendance_summary(request, guard_id, year, month):
+    guard = get_object_or_404(Guard, guard_id=guard_id)
+    if user_is_guard(request.user):
+        current_guard = get_user_guard(request.user)
+        if not current_guard or current_guard.guard_id != guard.guard_id:
+            return HttpResponseForbidden("You can only view your own attendance summary.")
+
+    if month < 1 or month > 12:
+        raise Http404("Invalid month.")
+
+    summary = build_guard_month_attendance_summary(guard, year, month)
+    return render(request, "guardmanagementsystem/salary_attendance_summary.html", {
+        "summary": summary,
     })
 
 

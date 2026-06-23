@@ -1,0 +1,92 @@
+{% extends "guardmanagementsystem/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2>Monthly Attendance Summary</h2>
+        <p class="text-muted mb-0">{{ summary.month_name }} {{ summary.year }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'salary_list' %}?guard={{ summary.guard.guard_id }}&year={{ summary.year }}&month={{ summary.month }}" class="btn btn-outline-secondary">
+            <i class="fa fa-arrow-left me-1"></i> Back
+        </a>
+        <button type="button" class="btn btn-primary" onclick="window.print()">
+            <i class="fa fa-print me-1"></i> Print
+        </button>
+    </div>
+</div>
+
+<div class="table-card mb-4">
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle mb-0">
+            <tbody>
+                <tr>
+                    <th>Guard Number</th>
+                    <td>{{ summary.guard.guard_number|default:"-" }}</td>
+                    <th>Guard Name</th>
+                    <td>{{ summary.guard.full_name }}</td>
+                </tr>
+                <tr>
+                    <th>Total Shifts Done</th>
+                    <td>{{ summary.total_shifts_done }}</td>
+                    <th>Daily Rate</th>
+                    <td>{{ summary.daily_rate }}</td>
+                </tr>
+                <tr>
+                    <th>Total Expected Amount</th>
+                    <td colspan="3"><strong>{{ summary.total_expected_amount }}</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="table-card">
+    <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="Monthly Attendance Summary">
+            <thead>
+                <tr>
+                    <th>Guard Number</th>
+                    <th>Name</th>
+                    <th>Client</th>
+                    <th>Contract</th>
+                    <th>Deployment Date</th>
+                    <th>Site</th>
+                    <th>Shift</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Role</th>
+                    <th>Expected Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in summary.rows %}
+                    <tr>
+                        <td>{{ summary.guard.guard_number|default:"-" }}</td>
+                        <td>{{ summary.guard.full_name }}</td>
+                        <td>{{ row.client }}</td>
+                        <td>{{ row.contract }}</td>
+                        <td>{{ row.deployment_date|date:"M d, Y" }}</td>
+                        <td>{{ row.site_location }}</td>
+                        <td><span class="badge bg-secondary">{{ row.shift_type }}</span></td>
+                        <td>{{ row.attendance.check_in_time|time:"H:i:s"|default:"-" }}</td>
+                        <td>{{ row.attendance.check_out_time|time:"H:i:s"|default:"-" }}</td>
+                        <td>{{ row.role }}</td>
+                        <td>{{ row.amount }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="11" class="text-center text-muted py-4">No checked-out attendance records found for this month.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="10" class="text-end">Total Expected Amount</th>
+                    <th>{{ summary.total_expected_amount }}</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}

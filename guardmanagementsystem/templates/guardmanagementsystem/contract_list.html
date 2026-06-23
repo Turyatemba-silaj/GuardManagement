@@ -53,7 +53,7 @@
                         </td>
                         <td>
                             {% if contract.iot_device %}
-                                {{ contract.iot_device.client.client_name|default:contract.client.client_name }} - {{ contract.iot_device.site_location }}
+                                {{ contract.iot_device.device_number }} ({{ contract.iot_device.device_code }})
                             {% else %}
                                 -
                             {% endif %}

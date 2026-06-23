@@ -132,20 +132,14 @@ class IoTDevice(models.Model):
     ]
 
     device_id = models.AutoField(primary_key=True)
-    client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='iot_devices')
-    deployment = models.ForeignKey('Deployment', on_delete=models.SET_NULL, null=True, blank=True, related_name='iot_devices')
-    device_name = models.CharField(max_length=100, blank=True)
+    device_number = models.CharField(max_length=50, unique=True, blank=True)
     device_code = models.CharField(max_length=50, unique=True, blank=True)
-    site_location = models.CharField(max_length=200)
     api_key = models.CharField(max_length=100, blank=True)
     is_active = models.BooleanField(choices=DEVICE_STATUS_CHOICES, default=True)
 
     def build_device_code(self):
-        client = self.client
-        site_location = self.site_location
-        client_part = f"{client.client_id:03d}" if client else "000"
-        site_part = re.sub(r"[^A-Z0-9]+", "-", str(site_location or "SITE").upper()).strip("-") or "SITE"
-        prefix = f"GATE-{client_part}-{site_part}"
+        number_part = re.sub(r"[^A-Z0-9]+", "-", str(self.device_number or "DEVICE").upper()).strip("-") or "DEVICE"
+        prefix = f"IOT-{number_part}"
         next_number = IoTDevice.objects.filter(device_code__startswith=prefix).count() + 1
         device_code = f"{prefix}-{next_number:03d}"
 
@@ -156,18 +150,13 @@ class IoTDevice(models.Model):
         return device_code
 
     def save(self, *args, **kwargs):
-        if self.deployment:
-            self.client = self.deployment.client
-            self.site_location = self.deployment.site_location
-        elif self.client and not self.site_location:
-            deployment = self.client.deployments.exclude(site_location="").order_by("-start_date").first()
-            if deployment:
-                self.deployment = deployment
-                self.site_location = deployment.site_location
-
-        if not self.device_name:
-            client_name = self.client.client_name if self.client else "Client"
-            self.device_name = f"{client_name} - {self.site_location} RFID Reader"
+        if not self.device_number:
+            next_number = IoTDevice.objects.count() + 1
+            device_number = f"IOT-{next_number:03d}"
+            while IoTDevice.objects.filter(device_number=device_number).exclude(pk=self.pk).exists():
+                next_number += 1
+                device_number = f"IOT-{next_number:03d}"
+            self.device_number = device_number
 
         if not self.device_code:
             self.device_code = self.build_device_code()
@@ -178,7 +167,7 @@ class IoTDevice(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.device_name} - {self.site_location}"
+        return self.device_number
     
 class Client(models.Model):
     client_id = models.AutoField(primary_key=True)
@@ -236,9 +225,6 @@ class Contract(models.Model):
         if self.end_date and self.start_date and self.end_date < self.start_date:
             raise ValidationError({'end_date': 'Contract end date cannot be before the start date.'})
 
-        if self.iot_device and self.client_id and self.iot_device.client_id and self.iot_device.client_id != self.client_id:
-            raise ValidationError({'iot_device': 'Selected IoT device belongs to another client.'})
-
         if self.number_of_guards and self.shift_distribution_total != self.number_of_guards:
             raise ValidationError({
                 'day_shift_guards': 'Day and night shift guards must add up to the total required guards.',
@@ -254,11 +240,6 @@ class Contract(models.Model):
 
     def save(self, *args, **kwargs):
         old_status = self.status
-        if self.iot_device:
-            if not self.location:
-                self.location = self.iot_device.site_location
-            if not self.client_id and self.iot_device.client_id:
-                self.client = self.iot_device.client
 
         if not self.contract_number:
             self.contract_number = next_contract_number()
@@ -336,6 +317,13 @@ class Deployment(models.Model):
 
 
 class DeploymentGuard(models.Model):
+    SHIFT_TYPE_CHOICES = [
+        ('D', 'D'),
+        ('N', 'N'),
+        ('D/N', 'D/N'),
+        ('PH', 'PH'),
+    ]
+
     STATUS_CHOICES = [
         ('Available for Deployment', 'Available for Deployment'),
         ('On Site', 'On Site'),
@@ -347,17 +335,13 @@ class DeploymentGuard(models.Model):
     deployment = models.ForeignKey(Deployment, on_delete=models.CASCADE, related_name='deployment_guards')
     guard = models.ForeignKey(Guard, on_delete=models.CASCADE, related_name='deployment_guard_assignments')
     deployment_date = models.DateField(default=date.today)
-    check_in_time = models.TimeField(null=True, blank=True)
-    check_out_time = models.TimeField(null=True, blank=True)
+    shift_type = models.CharField(max_length=30, choices=SHIFT_TYPE_CHOICES, default='D')
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='Available for Deployment')
 
     class Meta:
         unique_together = ('deployment', 'guard', 'deployment_date')
 
     def clean(self):
-        if self.check_in_time and self.check_out_time and self.check_out_time < self.check_in_time:
-            raise ValidationError("Guard deployment check out cannot be before check in.")
-
         if self.deployment_id and self.deployment_date:
             if self.deployment_date < self.deployment.start_date:
                 raise ValidationError("Guard deployment date cannot be before the deployment start date.")

@@ -88,7 +88,7 @@
                     <select id="device" name="device" class="form-control" required>
                         <option value="">Select device</option>
                         {% for device in devices %}
-                            <option value="{{ device.device_id }}">{{ device.device_name }} - {{ device.site_location }}</option>
+                            <option value="{{ device.device_id }}">{{ device.device_number }} - {{ device.device_code }}</option>
                         {% endfor %}
                     </select>
                 </div>

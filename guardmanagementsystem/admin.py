@@ -56,25 +56,18 @@ class GuardAdmin(admin.ModelAdmin):
 class IoTDeviceAdmin(admin.ModelAdmin):
     list_display = (
         "device_id",
-        "device_name",
+        "device_number",
         "device_code",
-        "client",
-        "deployment",
-        "site_location",
         "is_active",
     )
 
     search_fields = (
-        "device_name",
+        "device_number",
         "device_code",
-        "client__client_name",
-        "deployment__deployment_guards__guard__full_name",
-        "site_location",
     )
 
     list_filter = (
         "is_active",
-        "site_location",
     )
 
 @admin.register(Client)
@@ -187,8 +180,7 @@ class DeploymentGuardAdmin(admin.ModelAdmin):
         "deployment",
         "guard",
         "deployment_date",
-        "check_in_time",
-        "check_out_time",
+        "shift_type",
         "status",
     )
 

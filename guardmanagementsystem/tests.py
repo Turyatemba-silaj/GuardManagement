@@ -2,10 +2,12 @@ from django.contrib.auth.models import Group, User
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from calendar import monthrange
 
 from .forms import ClientForm, DeploymentGuardBulkForm, DeploymentGuardForm, GuardForm, UserCreateForm
 from .models import Attendance, AttendanceSwipe, Client, Contract, Deployment, DeploymentGuard, Guard, IoTDevice, RFIDCard, Salary
 from .role_access import nav_permissions, user_can_access
+from .views import generate_monthly_deployment_guards
 
 
 class AdminAccessTests(TestCase):
@@ -152,10 +154,50 @@ class DeploymentContractLimitTests(TestCase):
             "deployment": self.deployment.deployment_id,
             "guards": [self.guards[2].guard_id],
             "deployment_date": timezone.localdate().isoformat(),
+            "shift_type": "D",
         })
 
         self.assertFalse(form.is_valid())
-        self.assertIn("you have excedd contacted number of guards", form.non_field_errors())
+        self.assertIn("you have excedd contacted number of guards", str(form.non_field_errors()))
+
+    def test_monthly_guard_deployment_generation_creates_full_month(self):
+        target_date = timezone.localdate()
+
+        result = generate_monthly_deployment_guards(
+            self.deployment,
+            self.guards[:2],
+            target_date,
+        )
+
+        expected_days = monthrange(target_date.year, target_date.month)[1] - target_date.day + 1
+        self.assertEqual(result["created"], (expected_days * 2) - 2)
+        self.assertEqual(
+            DeploymentGuard.objects.filter(
+                deployment=self.deployment,
+                deployment_date__year=target_date.year,
+                deployment_date__month=target_date.month,
+            ).count(),
+            expected_days * 2,
+        )
+
+    def test_monthly_guard_deployment_generation_skips_existing_records(self):
+        target_date = timezone.localdate()
+
+        result = generate_monthly_deployment_guards(
+            self.deployment,
+            [self.guards[0]],
+            target_date,
+        )
+
+        self.assertEqual(result["existing"], 1)
+        self.assertEqual(
+            DeploymentGuard.objects.filter(
+                deployment=self.deployment,
+                guard=self.guards[0],
+                deployment_date=target_date,
+            ).count(),
+            1,
+        )
 
 class IoTAttendanceApiTests(TestCase):
     def setUp(self):
@@ -181,8 +223,25 @@ class IoTAttendanceApiTests(TestCase):
             email="client@example.com",
             address="Kampala",
         )
+        self.device = IoTDevice.objects.create(
+            device_number="IOT-TEST-001",
+            device_code="GATE-TEST-001",
+            api_key="test-api-key",
+            is_active=True,
+        )
+        self.contract = Contract.objects.create(
+            client=self.client_record,
+            iot_device=self.device,
+            number_of_guards=2,
+            charge_per_guard=100000,
+            contract_type="Static Guarding",
+            location="Main Gate",
+            start_date=timezone.localdate(),
+            status="Active",
+        )
         self.deployment = Deployment.objects.create(
             client=self.client_record,
+            contract=self.contract,
             site_location="Main Gate",
             start_date=timezone.localdate(),
             status="Active",
@@ -191,12 +250,6 @@ class IoTAttendanceApiTests(TestCase):
             deployment=self.deployment,
             guard=self.guard,
             deployment_date=timezone.localdate(),
-        )
-        self.device = IoTDevice.objects.create(
-            deployment=self.deployment,
-            device_code="GATE-TEST-001",
-            api_key="test-api-key",
-            is_active=True,
         )
 
     def post_swipe(self, action="auto"):
@@ -244,18 +297,6 @@ class IoTAttendanceApiTests(TestCase):
         self.assertEqual(response.json()["message"], "Guard is not actively deployed at this site today.")
 
     def test_iot_swipe_rejects_deployment_above_contract_guard_limit(self):
-        contract = Contract.objects.create(
-            client=self.client_record,
-            number_of_guards=2,
-            charge_per_guard=100000,
-            contract_type="Static Guarding",
-            location="Main Gate",
-            start_date=timezone.localdate(),
-            status="Active",
-        )
-        self.deployment.contract = contract
-        self.deployment.save(update_fields=["contract"])
-
         extra_card = RFIDCard.objects.create(
             card_uid="extra-card",
             card_number="CARD-EXTRA",
@@ -276,8 +317,8 @@ class IoTAttendanceApiTests(TestCase):
             guard=extra_guard,
             deployment_date=timezone.localdate(),
         )
-        contract.number_of_guards = 1
-        contract.save(update_fields=["number_of_guards"])
+        self.contract.number_of_guards = 1
+        self.contract.save(update_fields=["number_of_guards"])
 
         response = self.client.post(
             reverse("iot_attendance_api"),

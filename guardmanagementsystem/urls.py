@@ -69,6 +69,7 @@ urlpatterns = [
     path("salaries/add/", views.salary_add, name="salary_add"),
     path("salaries/payslips/", views.salary_payslip_general, name="salary_payslip_general"),
     path("salaries/payslip/attendance/<int:guard_id>/<int:year>/<int:month>/", views.salary_payslip_from_attendance, name="salary_payslip_from_attendance"),
+    path("salaries/attendance-summary/<int:guard_id>/<int:year>/<int:month>/", views.salary_attendance_summary, name="salary_attendance_summary"),
     path("salaries/payslip/<int:id>/", views.salary_payslip_individual, name="salary_payslip_individual"),
     path("salaries/edit/<int:id>/", views.salary_edit, name="salary_edit"),
     path("salaries/delete/<int:id>/", views.salary_delete, name="salary_delete"),

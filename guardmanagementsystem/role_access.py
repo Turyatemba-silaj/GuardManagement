@@ -62,6 +62,7 @@ HR_URLS = {
     "salary_list",
     "salary_payslip_general",
     "salary_payslip_from_attendance",
+    "salary_attendance_summary",
     "salary_payslip_individual",
 }
 
@@ -72,6 +73,7 @@ FINANCE_URLS = {
     "salary_delete",
     "salary_payslip_general",
     "salary_payslip_from_attendance",
+    "salary_attendance_summary",
     "salary_payslip_individual",
 }
 
@@ -93,6 +95,7 @@ GUARD_SELF_SERVICE_URLS = {
     "iot_swipe_options",
     "salary_list",
     "salary_payslip_from_attendance",
+    "salary_attendance_summary",
 }
 
 ROLE_URLS = {

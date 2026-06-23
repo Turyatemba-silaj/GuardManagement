@@ -4,7 +4,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2>IoT Devices</h2>
-        <p class="text-muted mb-0">Register RFID readers installed at client sites</p>
+        <p class="text-muted mb-0">Register RFID readers before assigning them to contracts</p>
     </div>
     <a href="{% url 'iot_device_add' %}" class="btn btn-primary">
         <i class="fa fa-plus"></i> Add Device
@@ -16,11 +16,9 @@
         <table class="table table-hover table-bordered align-middle mb-0 export-table" data-export-title="IoT Devices">
             <thead>
                 <tr>
-                    <th>Device Name</th>
+                    <th>Device Number</th>
                     <th>Device Code</th>
                     <th>API Key</th>
-                    <th>Assigned Guards</th>
-                    <th>Site Location</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -28,21 +26,9 @@
             <tbody>
                 {% for device in devices %}
                     <tr>
-                        <td>{{ device.device_name }}</td>
+                        <td>{{ device.device_number }}</td>
                         <td>{{ device.device_code }}</td>
                         <td><code>{{ device.api_key }}</code></td>
-                        <td>
-                            {% if device.deployment %}
-                                {% for assignment in device.deployment.deployment_guards.all %}
-                                    <div>{{ assignment.guard.guard_number|default:"-" }} - {{ assignment.guard.full_name }}</div>
-                                {% empty %}
-                                    -
-                                {% endfor %}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                        <td>{{ device.site_location }}</td>
                         <td>
                             {% if device.is_active %}
                                 <span class="badge bg-success">Active</span>
@@ -63,7 +49,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center text-muted py-4">No IoT devices found.</td>
+                        <td colspan="5" class="text-center text-muted py-4">No IoT devices found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -71,5 +57,4 @@
     </div>
 </div>
 {% endblock %}
-
 

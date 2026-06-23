@@ -2,6 +2,8 @@ from django import forms
 from django.db import models
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import Group, User
+from calendar import monthrange
+from datetime import date
 from .models import*
 
 
@@ -198,34 +200,18 @@ class RFIDCardForm(forms.ModelForm):
 class IoTDeviceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['deployment'].queryset = Deployment.objects.select_related('client').order_by('client__client_name', 'site_location')
-        self.fields['deployment'].label_from_instance = (
-            lambda deployment: f"{deployment.client.client_name} - {deployment.site_location}"
-        )
-        self.fields['device_name'].required = False
+        self.fields['device_number'].required = False
         self.fields['device_code'].required = False
         self.fields['api_key'].required = False
 
-    def clean(self):
-        cleaned_data = super().clean()
-        deployment = cleaned_data.get('deployment')
-
-        if not deployment:
-            raise forms.ValidationError("Select a deployment so the device can pick its client and site.")
-
-        return cleaned_data
-
     class Meta:
         model = IoTDevice
-        fields = ['deployment', 'device_name', 'device_code', 'api_key', 'is_active']
+        fields = ['device_number', 'device_code', 'api_key', 'is_active']
 
         widgets = {
-            'deployment': forms.Select(attrs={
-                'class': 'form-control'
-            }),
-            'device_name': forms.TextInput(attrs={
+            'device_number': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Auto-generated from deployment if blank'
+                'placeholder': 'Example: IOT-001; auto-generated if blank'
             }),
             'device_code': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -276,22 +262,30 @@ class ContractForm(forms.ModelForm):
         self.fields['client'].queryset = Client.objects.order_by('client_name')
 
         selected_device_id = self.data.get('iot_device') if self.is_bound else self.instance.iot_device_id
-        device_queryset = IoTDevice.objects.select_related('client').filter(is_active=True)
+        unavailable_device_ids = Contract.objects.filter(
+            iot_device__isnull=False,
+            status__in=['Draft', 'Active'],
+        )
+        if self.instance and self.instance.pk:
+            unavailable_device_ids = unavailable_device_ids.exclude(pk=self.instance.pk)
+        unavailable_device_ids = unavailable_device_ids.values_list('iot_device_id', flat=True)
+
+        device_queryset = IoTDevice.objects.filter(is_active=True).exclude(
+            pk__in=unavailable_device_ids
+        )
 
         if selected_device_id:
-            device_queryset = IoTDevice.objects.select_related('client').filter(
+            device_queryset = IoTDevice.objects.filter(
                 models.Q(pk=selected_device_id) | models.Q(pk__in=device_queryset.values('pk'))
             )
 
         self.fields['iot_device'].queryset = device_queryset.order_by(
-            'client__client_name',
-            'site_location',
-            'device_name',
+            'device_number',
         )
         self.fields['iot_device'].label_from_instance = (
-            lambda device: f"{device.client.client_name if device.client else 'Unassigned'} - {device.site_location}"
+            lambda device: f"{device.device_number} ({device.device_code})"
         )
-        self.fields['iot_device'].help_text = "Pick an active IoT device from the IoT Device table."
+        self.fields['iot_device'].help_text = "Pick an active, unassigned IoT device from inventory."
         self.fields['contract_number'].required = False
         self.fields['contract_number'].help_text = "Leave blank to generate the next contract number."
 
@@ -458,19 +452,12 @@ class DeploymentGuardForm(forms.ModelForm):
         )
         self.fields['guard'].queryset = Guard.objects.filter(status="Active").order_by('full_name')
         self.fields['deployment_date'].label = "Deployment Date"
-        self.fields['check_in_time'].label = "Check In"
-        self.fields['check_out_time'].label = "Check Out"
 
     def clean(self):
         cleaned_data = super().clean()
         deployment = cleaned_data.get('deployment')
         guard = cleaned_data.get('guard')
         deployment_date = cleaned_data.get('deployment_date')
-        check_in_time = cleaned_data.get('check_in_time')
-        check_out_time = cleaned_data.get('check_out_time')
-
-        if check_in_time and check_out_time and check_out_time < check_in_time:
-            raise forms.ValidationError("Guard deployment check out cannot be before check in.")
 
         if deployment and deployment_date:
             if deployment_date < deployment.start_date:
@@ -499,8 +486,7 @@ class DeploymentGuardForm(forms.ModelForm):
             'deployment',
             'guard',
             'deployment_date',
-            'check_in_time',
-            'check_out_time',
+            'shift_type',
         ]
 
         widgets = {
@@ -511,13 +497,8 @@ class DeploymentGuardForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date'
             }),
-            'check_in_time': forms.TimeInput(attrs={
-                'class': 'form-control',
-                'type': 'time'
-            }),
-            'check_out_time': forms.TimeInput(attrs={
-                'class': 'form-control',
-                'type': 'time'
+            'shift_type': forms.Select(attrs={
+                'class': 'form-control'
             }),
         }
 
@@ -529,23 +510,19 @@ class DeploymentGuardBulkForm(forms.Form):
     guards = forms.ModelMultipleChoiceField(
         queryset=Guard.objects.none(),
         label="Guards",
-        help_text="Tick all guards to assign for swipe attendance on this deployment date.",
+        help_text="Tick all guards to assign for swipe attendance for the whole selected month.",
         widget=forms.CheckboxSelectMultiple(attrs={'class': 'guard-checkbox-list'})
     )
     deployment_date = forms.DateField(
-        label="Deployment Date",
+        label="Deployment Month",
         initial=date.today,
+        help_text="Pick any date in the month to generate daily guard deployments for that full month.",
         widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date'})
     )
-    check_in_time = forms.TimeField(
-        required=False,
-        label="Check In",
-        widget=forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'})
-    )
-    check_out_time = forms.TimeField(
-        required=False,
-        label="Check Out",
-        widget=forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'})
+    shift_type = forms.ChoiceField(
+        choices=DeploymentGuard.SHIFT_TYPE_CHOICES,
+        initial='D',
+        widget=forms.Select(attrs={'class': 'form-control'})
     )
 
     def __init__(self, *args, **kwargs):
@@ -564,11 +541,6 @@ class DeploymentGuardBulkForm(forms.Form):
         deployment = cleaned_data.get('deployment')
         guards = list(cleaned_data.get('guards') or [])
         deployment_date = cleaned_data.get('deployment_date')
-        check_in_time = cleaned_data.get('check_in_time')
-        check_out_time = cleaned_data.get('check_out_time')
-
-        if check_in_time and check_out_time and check_out_time < check_in_time:
-            raise forms.ValidationError("Guard deployment check out cannot be before check in.")
 
         if deployment and deployment_date:
             if deployment_date < deployment.start_date:
@@ -578,27 +550,27 @@ class DeploymentGuardBulkForm(forms.Form):
                 raise forms.ValidationError("Guard deployment date cannot be after the deployment end date.")
 
         if deployment and guards and deployment_date:
-            duplicate_names = list(DeploymentGuard.objects.filter(
-                deployment=deployment,
-                guard__in=guards,
-                deployment_date=deployment_date,
-            ).values_list('guard__full_name', flat=True))
-
-            if duplicate_names:
-                raise forms.ValidationError(
-                    "Already assigned on this deployment date: " + ", ".join(duplicate_names)
-                )
-
             if deployment.contract_id:
                 active_statuses = ["Active", "Running", "On Deployment", "Available", "Has No Deployment"]
-                existing_guard_ids = set(DeploymentGuard.objects.filter(
-                    deployment__contract=deployment.contract,
-                    deployment__status__in=active_statuses,
-                    deployment_date=deployment_date,
-                ).values_list('guard_id', flat=True))
                 new_guard_ids = {guard.guard_id for guard in guards}
-                if len(existing_guard_ids | new_guard_ids) > deployment.contract.number_of_guards:
-                    raise forms.ValidationError("you have excedd contacted number of guards")
+                last_day = monthrange(deployment_date.year, deployment_date.month)[1]
+                month_start = date(deployment_date.year, deployment_date.month, 1)
+                month_end = date(deployment_date.year, deployment_date.month, last_day)
+                schedule_start = max(month_start, deployment.start_date)
+                schedule_end = min(month_end, deployment.end_date) if deployment.end_date else month_end
+
+                if schedule_start <= schedule_end:
+                    for day_number in range(schedule_start.day, schedule_end.day + 1):
+                        schedule_date = date(schedule_start.year, schedule_start.month, day_number)
+                        existing_guard_ids = set(DeploymentGuard.objects.filter(
+                            deployment__contract=deployment.contract,
+                            deployment__status__in=active_statuses,
+                            deployment_date=schedule_date,
+                        ).values_list('guard_id', flat=True))
+                        if len(existing_guard_ids | new_guard_ids) > deployment.contract.number_of_guards:
+                            raise forms.ValidationError(
+                                f"you have excedd contacted number of guards on {schedule_date:%Y-%m-%d}"
+                            )
 
         return cleaned_data
 
