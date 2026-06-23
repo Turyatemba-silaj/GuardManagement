@@ -886,6 +886,8 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
     card_id = str(card_id or "").strip()
     site_location = str(site_location or "").strip()
     action = str(action or "auto").strip().lower()
+    if action not in ["auto", "hourly"]:
+        return False, "Only hourly swipe attendance is allowed.", None
 
     if not card_id:
         return False, "RFID card number is required.", None
@@ -908,28 +910,6 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
     if contract_guard_limit_exceeded_for_deployment(deployment, today):
         return False, "you have excedd contacted number of guards", None
 
-    if action in ["mark_absent", "absent", "replace"]:
-        replacement_guard = Guard.objects.filter(guard_id=replacement_guard_id, status="Active").first()
-        if not replacement_guard:
-            return False, "Select an active replacement guard.", None
-
-        if replacement_guard == guard:
-            return False, "Replacement guard cannot be the same as the absent assigned guard.", None
-
-        attendance, _ = Attendance.objects.get_or_create(
-            guard=guard,
-            attendance_date=today,
-            defaults={"status": "Present"},
-        )
-        attendance.status = "Absent"
-        attendance.replacement_guard = replacement_guard
-        attendance.absence_reason = "Assigned guard absent - replaced via IoT"
-        attendance.check_in_time = attendance.check_in_time or current_time
-        attendance.check_out_time = attendance.check_out_time or current_time
-        attendance.save()
-        create_attendance_swipe(attendance, device, "replacement")
-        return True, f"{guard.full_name} marked absent. Replacement recorded for {replacement_guard.full_name}.", attendance
-
     attendance, created = Attendance.objects.get_or_create(
         guard=guard,
         attendance_date=today,
@@ -943,13 +923,6 @@ def record_iot_attendance(card_id, site_location, action="check_in", replacement
     if current_swipe_count >= HOURLY_SWIPE_COUNT and not attendance.check_out_time:
         close_attendance_from_existing_swipes(attendance, guard, today, site_location, device)
         return True, f"12th swipe captured as check-out for {guard.full_name}. Attendance counted and salary updated.", attendance
-
-    if action == "check_out":
-        if current_swipe_count >= HOURLY_SWIPE_COUNT:
-            return False, f"{guard.full_name} already has the maximum 12 swipes today.", attendance
-        create_attendance_swipe(attendance, device, "check_out")
-        close_attendance_for_checkout(attendance, guard, today, site_location, device)
-        return True, f"Check-out recorded for {guard.full_name}. Attendance is now ready for payroll.", attendance
 
     if attendance.check_out_time:
         return False, f"{guard.full_name} has already checked out today.", attendance
@@ -2858,13 +2831,7 @@ def iot_swipe_attendance(request):
         device = IoTDevice.objects.filter(device_id=request.POST.get("device")).first()
         current_site = str(request.POST.get("site_location") or "").strip()
         card_id = request.POST.get("card_id")
-        action = request.POST.get("action", "check_in")
-        replacement_card_id = request.POST.get("replacement_card_id")
-        replacement_guard_id = None
-
-        if action in ["mark_absent", "absent", "replace"] and replacement_card_id == card_id:
-            messages.error(request, "Replacement RFID card cannot be the same as the absent guard RFID card.")
-            return redirect("iot_swipe_attendance")
+        action = request.POST.get("action", "auto")
 
 
         if not device:
@@ -2876,24 +2843,15 @@ def iot_swipe_attendance(request):
             }
             if card_id not in allowed_card_values:
                 messages.error(request, "Select an RFID card for a guard assigned to the selected IoT device today.")
-            elif replacement_card_id and replacement_card_id not in allowed_card_values:
-                messages.error(request, "Select a replacement RFID card assigned to the selected IoT device today.")
             else:
                 if not current_site:
                     current_site = infer_single_site_for_iot_device(device)
 
-                if replacement_card_id:
-                    replacement_assignments = find_active_assignments_by_card(
-                        replacement_card_id,
-                        current_site,
-                        device,
-                    )
-                    replacement_guard_id = replacement_assignments[0].guard_id if len(replacement_assignments) == 1 else None
                 success, message, _ = record_iot_attendance(
                     card_id,
                     current_site,
                     action,
-                    replacement_guard_id,
+                    None,
                     device,
                 )
                 if success:
@@ -2936,8 +2894,6 @@ def iot_attendance_api(request):
     card_id = payload.get("card_id") or payload.get("rfid_card_number")
     current_site = str(payload.get("site_location") or payload.get("site") or payload.get("location") or "").strip()
     action = payload.get("action", "auto")
-    replacement_guard_id = payload.get("replacement_guard_id")
-    replacement_card_id = payload.get("replacement_card_id") or payload.get("replacement_rfid_card_number")
 
 
     device = IoTDevice.objects.filter(
@@ -2953,11 +2909,8 @@ def iot_attendance_api(request):
         }, status=403)
 
     site_location = current_site or infer_single_site_for_iot_device(device)
-    if replacement_card_id and not replacement_guard_id:
-        replacement_assignments = find_active_assignments_by_card(replacement_card_id, site_location, device)
-        replacement_guard_id = replacement_assignments[0].guard_id if len(replacement_assignments) == 1 else None
 
-    success, message, attendance = record_iot_attendance(card_id, site_location, action, replacement_guard_id, device)
+    success, message, attendance = record_iot_attendance(card_id, site_location, action, None, device)
     data = {
         "success": success,
         "message": message,

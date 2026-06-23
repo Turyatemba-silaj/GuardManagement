@@ -334,6 +334,18 @@ class IoTAttendanceApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["message"], "you have excedd contacted number of guards")
 
+    def test_iot_swipe_rejects_manual_checkout_action(self):
+        response = self.post_swipe(action="check_out")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "Only hourly swipe attendance is allowed.")
+
+    def test_iot_swipe_rejects_absent_action(self):
+        response = self.post_swipe(action="mark_absent")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "Only hourly swipe attendance is allowed.")
+
     def test_twelfth_auto_swipe_checks_out_and_updates_salary(self):
         for swipe_number in range(1, 12):
             response = self.post_swipe()
